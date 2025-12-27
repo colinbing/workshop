@@ -13,7 +13,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Feature, FeatureStatus, Phase, WorkbenchDoc } from './types';
 import { loadDoc, saveDoc } from './storage';
 
@@ -199,6 +199,44 @@ function normalizePrd(prd: PrdDoc): PrdDoc {
   return { ...prd, blocks };
 }
 
+function prdToHtml(value: string) {
+  const v = value ?? '';
+  if (/[<][a-z][\s\S]*[>]/i.test(v)) return v;
+  const esc = v
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+  return esc.replaceAll('\n', '<br/>');
+}
+
+function prdHtmlIsEmpty(html: string) {
+  const v = (html ?? '').trim();
+  if (!v) return true;
+  const text = v
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h1|h2)>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .trim();
+  return text.length === 0;
+}
+
+function isTypingTarget(target: EventTarget | null) {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  if (el.closest('input, textarea, select')) return true;
+  if (el.closest('[contenteditable="true"]')) return true;
+  if ((el as HTMLElement).isContentEditable) return true;
+  return false;
+}
+
+function isTypingContext(target: EventTarget | null) {
+  return isTypingTarget(target) || isTypingTarget(document.activeElement);
+}
+
 function firstPhaseId(phases: Phase[]) {
   const sorted = [...phases].sort((a, b) => a.order - b.order);
   return sorted[0]?.id ?? '';
@@ -237,6 +275,211 @@ function usePrefersReducedMotion() {
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
+
+type InlineRichFieldProps = {
+  blockId: string;
+  html: string;
+  onChangeHtml: (nextHtml: string) => void;
+  placeholder: string;
+  onFocusBlock: (blockId: string, el: HTMLDivElement) => void;
+  onBlurBlock: (blockId: string, nextHtml: string) => void;
+};
+
+const InlineRichField = memo(function InlineRichField({
+  blockId,
+  html,
+  onChangeHtml,
+  placeholder,
+  onFocusBlock,
+  onBlurBlock,
+}: InlineRichFieldProps) {
+  const elRef = useRef<HTMLDivElement | null>(null);
+
+  // Sync incoming html into the DOM ONLY when not actively editing this field
+  useLayoutEffect(() => {
+    const el = elRef.current;
+    if (!el) return;
+    const isFocused = document.activeElement === el;
+    if (isFocused) return;
+    if (el.innerHTML !== html) el.innerHTML = html || '';
+  }, [html]);
+
+  const empty = prdHtmlIsEmpty(html);
+
+  return (
+    <div style={{ position: 'relative', marginTop: 10 }}>
+      <div
+        ref={elRef}
+        className="prd-rich"
+        contentEditable
+        suppressContentEditableWarning
+        data-prd-field={blockId}
+        onFocus={(e) => onFocusBlock(blockId, e.currentTarget)}
+        onBlur={(e) => {
+          const nextHtml = (e.currentTarget as HTMLDivElement).innerHTML;
+          onBlurBlock(blockId, nextHtml);
+        }}
+        onInput={(e) => {
+          const nextHtml = (e.currentTarget as HTMLDivElement).innerHTML;
+          onChangeHtml(nextHtml);
+        }}
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          padding: '14px 14px',
+          borderRadius: 14,
+          border: '1px solid rgba(255,255,255,0.10)',
+          background: 'rgba(0,0,0,0.14)',
+          color: 'inherit',
+          outline: 'none',
+          fontSize: 14,
+          lineHeight: 1.55,
+          minHeight: 130,
+          whiteSpace: 'normal',
+        }}
+      />
+
+      {empty ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: 14,
+            top: 14,
+            right: 14,
+            color: 'rgba(255,255,255,0.34)',
+            fontSize: 14,
+            pointerEvents: 'none',
+            userSelect: 'none',
+          }}
+        >
+          {placeholder}
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
+type PrdToolbarProps = {
+  visible: boolean;
+  alwaysVisible?: boolean;
+  className?: string;
+  onCmd: (cmd: string, val?: string) => void;
+  onLink: () => void;
+};
+
+const PrdToolbar = memo(function PrdToolbar({
+  visible,
+  alwaysVisible = false,
+  className,
+  onCmd,
+  onLink,
+}: PrdToolbarProps) {
+  const isVisible = alwaysVisible || visible;
+
+  return (
+    <div
+      className={className}
+      style={{
+        marginTop: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'nowrap',
+        overflowX: 'auto',
+        overflowY: 'hidden',
+        WebkitOverflowScrolling: 'touch',
+        paddingBottom: 4,
+        padding: 8,
+        borderRadius: 14,
+        border: '1px solid rgba(255,255,255,0.10)',
+        background: 'rgba(0,0,0,0.10)',
+        minHeight: 44,
+        opacity: isVisible ? 1 : 0,
+        pointerEvents: isVisible ? 'auto' : 'none',
+        transform: isVisible ? 'translateY(0)' : 'translateY(-2px)',
+        transition: 'opacity 140ms ease, transform 140ms ease',
+        scrollbarWidth: 'none' as React.CSSProperties['scrollbarWidth'],
+      }}
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      <button type="button" onClick={() => onCmd('bold')} style={prdToolBtn}>
+        B
+      </button>
+      <button type="button" onClick={() => onCmd('italic')} style={prdToolBtn}>
+        <em>I</em>
+      </button>
+      <button type="button" onClick={() => onCmd('underline')} style={prdToolBtn}>
+        <u>U</u>
+      </button>
+
+      <div style={{ width: 1, background: 'rgba(255,255,255,0.10)', margin: '0 4px' }} />
+
+      <button type="button" onClick={() => onCmd('insertUnorderedList')} style={prdToolBtn}>
+        • List
+      </button>
+      <button type="button" onClick={() => onCmd('insertOrderedList')} style={prdToolBtn}>
+        1. List
+      </button>
+
+      <div style={{ width: 1, background: 'rgba(255,255,255,0.10)', margin: '0 4px' }} />
+
+      <button type="button" onClick={() => onCmd('formatBlock', 'H1')} style={prdToolBtn}>
+        H1
+      </button>
+      <button type="button" onClick={() => onCmd('formatBlock', 'H2')} style={prdToolBtn}>
+        H2
+      </button>
+      <button type="button" onClick={() => onCmd('formatBlock', 'P')} style={prdToolBtn}>
+        Body
+      </button>
+
+      <div style={{ width: 1, background: 'rgba(255,255,255,0.10)', margin: '0 4px' }} />
+
+      <button type="button" onClick={onLink} style={prdToolBtn}>
+        Link
+      </button>
+      <button type="button" onClick={() => onCmd('removeFormat')} style={prdToolBtn}>
+        Clear
+      </button>
+
+      <label
+        style={{
+          ...prdToolBtn,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}
+      >
+        <span style={{ opacity: 0.8 }}>Color</span>
+        <input
+          type="color"
+          defaultValue="#ffffff"
+          onChange={(e) => onCmd('foreColor', e.target.value)}
+          style={{
+            width: 20,
+            height: 20,
+            border: 'none',
+            background: 'transparent',
+            padding: 0,
+            cursor: 'pointer',
+          }}
+        />
+      </label>
+    </div>
+  );
+});
+
+const prdToolBtn: React.CSSProperties = {
+  padding: '6px 9px',
+  borderRadius: 12,
+  border: '1px solid rgba(255,255,255,0.12)',
+  background: 'rgba(255,255,255,0.03)',
+  color: 'inherit',
+  fontWeight: 900,
+  fontSize: 12,
+};
 
 export default function App() {
   const [doc, setDoc] = useState<WorkbenchDoc>(() => loadDoc() ?? seedDoc());
@@ -297,7 +540,18 @@ export default function App() {
   });
   const [activeSection, setActiveSection] = useState<DocSection>('roadmap');
   const [prd, setPrd] = useState<PrdDoc>(() => loadPrd() ?? seedPrd());
-  const [prdMode, setPrdMode] = useState<'view' | 'edit'>('view');
+  const [prdMode, setPrdMode] = useState<'view' | 'editTemplate'>('view');
+  const [prdInlineEditId, setPrdInlineEditId] = useState<string | null>(null);
+  const prdActiveRef = useRef<HTMLDivElement | null>(null);
+  const [prdHoverId, setPrdHoverId] = useState<string | null>(null);
+  const [prdFocusId, setPrdFocusId] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState<boolean>(false);
+  const [detailsId, setDetailsId] = useState<string | null>(null);
+
+  const detailsFeature = useMemo(() => {
+    if (!detailsId) return null;
+    return doc.features.find((f) => f.id === detailsId) ?? null;
+  }, [doc.features, detailsId]);
 
   function SortableCard({
     feature: f,
@@ -307,6 +561,7 @@ export default function App() {
     isSelected: boolean;
   }) {
     const meta = STATUS_META[f.status];
+    const showMore = !!f.description && (f.description.length > 120 || f.description.includes('\n'));
     const {
       attributes,
       listeners,
@@ -481,19 +736,65 @@ export default function App() {
           }}
         >
                     {f.description ? (
-                      <div
-                        style={{
-                          marginTop: 0,
-                          opacity: 0.85,
-                          fontSize: 14,
-                          lineHeight: 1.3,
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        {f.description}
+                      <div style={{ position: 'relative', marginTop: 0 }}>
+                        <div
+                          style={{
+                            opacity: 0.85,
+                            fontSize: 14,
+                            lineHeight: 1.3,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 4,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {f.description}
+                        </div>
+
+                        {showMore ? (
+                          <>
+                            <div
+                              style={{
+                                position: 'absolute',
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                height: 28,
+                                pointerEvents: 'none',
+                                background:
+                                  'linear-gradient(180deg, rgba(20,20,20,0), rgba(20,20,20,0.85))',
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openDetails(f.id);
+                              }}
+                              title="Open details"
+                              style={{
+                                position: 'absolute',
+                                right: 0,
+                                bottom: -2,
+                                padding: '4px 8px',
+                                borderRadius: 999,
+                                border: '1px solid rgba(255,255,255,0.12)',
+                                background: 'rgba(255,255,255,0.04)',
+                                color: 'rgba(255,255,255,0.82)',
+                                cursor: 'pointer',
+                                fontSize: 12,
+                                fontWeight: 800,
+                                letterSpacing: 0.1,
+                              }}
+                            >
+                              More
+                            </button>
+                          </>
+                        ) : null}
                       </div>
                     ) : null}
 
@@ -811,6 +1112,133 @@ export default function App() {
     );
   }
 
+  function FeatureDetailsPanel({ feature }: { feature: Feature }) {
+    const meta = STATUS_META[feature.status];
+    const phaseName = phasesById.get(feature.phaseId)?.name ?? 'Unknown phase';
+
+    return (
+      <div
+        style={{
+          width: 380,
+          minWidth: 380,
+          maxWidth: 380,
+          height: '100%',
+          maxHeight: '100%',
+          overflow: 'hidden',
+          borderRadius: 18,
+          border: '1px solid rgba(255,255,255,0.10)',
+          background: 'rgba(255,255,255,0.04)',
+          boxShadow: '0 18px 48px rgba(0,0,0,0.35)',
+          backdropFilter: 'blur(14px)',
+          WebkitBackdropFilter: 'blur(14px)',
+          display: 'flex',
+          flexDirection: 'column',
+          transform: detailsOpen ? 'translateX(0)' : 'translateX(14px)',
+          opacity: detailsOpen ? 1 : 0,
+          transition: reducedMotion ? 'none' : 'transform 220ms cubic-bezier(.2,.8,.2,1), opacity 180ms ease',
+        }}
+      >
+        <div
+          style={{
+            padding: 14,
+            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            background: meta.bar,
+            borderTopLeftRadius: 18,
+            borderTopRightRadius: 18,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'start', gap: 10 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: 0.1, lineHeight: 1.15 }}>
+                {feature.title}
+              </div>
+              <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    padding: '4px 8px',
+                    borderRadius: 999,
+                    background: meta.chipBg,
+                    border: `1px solid ${meta.chipBorder}`,
+                    color: meta.chipText,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {meta.label}
+                </span>
+
+                <span style={{ ...chipMuted }}>{phaseName}</span>
+
+                {feature.tags.length ? <span style={chip}>{feature.tags.join(', ')}</span> : null}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={closeDetails}
+              style={{
+                padding: '8px 10px',
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'rgba(0,0,0,0.16)',
+                color: 'inherit',
+                cursor: 'pointer',
+                fontWeight: 900,
+              }}
+              title="Close (Esc)"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div style={{ padding: 14, overflowY: 'auto', minHeight: 0 }}>
+          <div
+            style={{
+              fontSize: 12,
+              opacity: 0.62,
+              fontWeight: 850,
+              letterSpacing: 0.25,
+              textTransform: 'uppercase',
+            }}
+          >
+            Description
+          </div>
+          <div style={{ marginTop: 8, fontSize: 14, lineHeight: 1.45, whiteSpace: 'pre-wrap', opacity: 0.92 }}>
+            {feature.description?.trim() ? feature.description : '—'}
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: 14,
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+            display: 'flex',
+            gap: 10,
+            justifyContent: 'flex-end',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => openEditor(feature.id)}
+            style={{
+              padding: '10px 12px',
+              borderRadius: 14,
+              border: '1px solid rgba(255,255,255,0.14)',
+              background: 'rgba(120,200,255,0.12)',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontWeight: 900,
+            }}
+          >
+            Edit
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // For focusing after create
   const scrollToIdRef = useRef<string | null>(null);
   const editorTitleRef = useRef<HTMLInputElement | null>(null);
@@ -851,6 +1279,10 @@ export default function App() {
   }, []);
 
   const phasesById = useMemo(() => new Map(doc.phases.map((p) => [p.id, p])), [doc.phases]);
+  const prdBlocksSorted = useMemo(
+    () => [...prd.blocks].sort((a, b) => a.order - b.order),
+    [prd.blocks]
+  );
 
   const orderedFeatures = useMemo(() => {
     return [...doc.features].sort((a, b) => a.order - b.order);
@@ -885,6 +1317,7 @@ export default function App() {
   // Keyboard controls
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isTypingContext(e.target)) return;
       if (isEditorOpen) {
         if (e.key === 'Escape') {
           e.preventDefault();
@@ -892,16 +1325,6 @@ export default function App() {
         }
         return;
       }
-
-      // Arrow selection (avoid hijacking when typing in an input)
-      const target = e.target as HTMLElement | null;
-      const isTyping =
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          (target as HTMLElement).isContentEditable);
-
-      if (isTyping) return;
 
       if (e.key.toLowerCase() === 'n') {
         e.preventDefault();
@@ -1060,6 +1483,33 @@ function beginInlinePhaseEdit(id: string, current: string) {
   setPhaseDraft(current);
 }
 
+  const openDetails = (id: string) => {
+    setDetailsId(id);
+    setDetailsOpen(true);
+  };
+
+  const closeDetails = () => {
+    setDetailsOpen(false);
+    setDetailsId(null);
+  };
+
+  const prdCmd = (cmd: string, val?: string) => {
+    const el = prdActiveRef.current;
+    if (!el) return;
+    el.focus();
+    try {
+      document.execCommand(cmd, false, val);
+    } catch {
+      // ignore
+    }
+  };
+
+  const prdLink = () => {
+    const url = window.prompt('Link URL');
+    if (!url) return;
+    prdCmd('createLink', url);
+  };
+
   function cancelInlineTitleEdit() {
     setEditingTitleId(null);
     setTitleDraft('');
@@ -1103,7 +1553,7 @@ function cancelInlinePhaseEdit() {
   function renamePrdBlock(id: string, label: string) {
     setPrd((prev) => ({
       ...prev,
-      blocks: prev.blocks.map((b) => (b.id === id ? { ...b, label: label.trim() || b.label } : b)),
+      blocks: prev.blocks.map((b) => (b.id === id ? { ...b, label } : b)),
     }));
   }
 
@@ -1111,10 +1561,10 @@ function cancelInlinePhaseEdit() {
     setPrd((prev) => {
       const blocks = [...prev.blocks].sort((a, b) => a.order - b.order);
       const idx = blocks.findIndex((b) => b.id === id);
-      if (idx === -1) return prev;
+      if (idx === -1) return normalizePrd(prev);
 
       const nextIdx = clamp(idx + delta, 0, blocks.length - 1);
-      if (nextIdx === idx) return prev;
+      if (nextIdx === idx) return normalizePrd({ ...prev, blocks });
 
       const next = arrayMove(blocks, idx, nextIdx);
       return normalizePrd({ ...prev, blocks: next });
@@ -1247,6 +1697,7 @@ useEffect(() => {
 
     const onWheel = (e: WheelEvent) => {
       if (isEditorOpen) return;
+      if (isTypingContext(e.target)) return;
       const target = e.target as HTMLElement | null;
       if (target) {
         if (target.closest('[data-no-snap]')) return;
@@ -1267,6 +1718,39 @@ useEffect(() => {
   useEffect(() => {
     savePrd(prd);
   }, [prd]);
+
+  useEffect(() => {
+    if (!prdInlineEditId) return;
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-prd-field="${prdInlineEditId}"]`) as HTMLDivElement | null;
+      el?.focus();
+    });
+  }, [prdInlineEditId]);
+
+  useEffect(() => {
+    if (!prdInlineEditId) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const host = document.querySelector(
+        `[data-prd-inline="${prdInlineEditId}"]`
+      ) as HTMLElement | null;
+      if (host?.contains(target)) return;
+      setPrdInlineEditId(null);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [prdInlineEditId]);
+
+  useEffect(() => {
+    if (!detailsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingContext(e.target)) return;
+      if (e.key === 'Escape') closeDetails();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [detailsOpen]);
 
   useEffect(() => {
     const root = scrollRootRef.current;
@@ -1514,7 +1998,7 @@ useEffect(() => {
     scrollSnapStop: 'always',
   };
   const PRD_COL_W = 520;
-  const PRD_COL_GAP = 22;
+  const PRD_COL_GAP = 24;
   const PRD_BODY_SIZE = 16;
   const PRD_LINE = 1.6;
 
@@ -1547,6 +2031,22 @@ useEffect(() => {
     fontWeight: 900,
     letterSpacing: 0.1,
     lineHeight: 1.15,
+  };
+
+  const prdPencilBtnStyle: React.CSSProperties = {
+    width: 22,
+    height: 22,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    border: '1px solid rgba(255,255,255,0.10)',
+    background: 'rgba(255,255,255,0.03)',
+    color: 'rgba(255,255,255,0.78)',
+    cursor: 'pointer',
+    padding: 0,
+    lineHeight: 1,
+    fontSize: 13,
   };
 
   return (
@@ -1602,26 +2102,33 @@ useEffect(() => {
             <div>
               <div style={{ opacity: 0.95, fontWeight: 950, fontSize: 26, letterSpacing: 0.1 }}>PRD</div>
               <div style={{ marginTop: 6, opacity: 0.62, fontSize: 12, fontWeight: 700 }}>
-                {prdMode === 'edit' ? 'Edit mode • autosaved locally' : 'View mode'}
+                {prdMode === 'editTemplate' ? 'Template edit mode • autosaved locally' : 'View mode'}
               </div>
             </div>
 
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
                 type="button"
-                onClick={() => setPrdMode((m) => (m === 'edit' ? 'view' : 'edit'))}
+                onClick={() =>
+                  setPrdMode((m) => {
+                    const next = m === 'editTemplate' ? 'view' : 'editTemplate';
+                    if (next === 'editTemplate') setPrdInlineEditId(null);
+                    return next;
+                  })
+                }
                 style={{
                   padding: '8px 12px',
                   borderRadius: 12,
                   border: '1px solid rgba(255,255,255,0.12)',
-                  background: prdMode === 'edit' ? 'rgba(120,200,255,0.12)' : 'rgba(255,255,255,0.03)',
+                  background:
+                    prdMode === 'editTemplate' ? 'rgba(120,200,255,0.12)' : 'rgba(255,255,255,0.03)',
                   color: 'inherit',
                   cursor: 'pointer',
                   fontWeight: 800,
                 }}
-                title={prdMode === 'edit' ? 'Switch to view mode' : 'Switch to edit mode'}
+                title={prdMode === 'editTemplate' ? 'Switch to view mode' : 'Switch to template edit mode'}
               >
-                {prdMode === 'edit' ? 'Done' : 'Edit'}
+                {prdMode === 'editTemplate' ? 'Done' : 'Edit'}
               </button>
 
               <button
@@ -1650,7 +2157,10 @@ useEffect(() => {
               minHeight: 0,
               overflowX: 'auto',
               overflowY: 'hidden',
-              paddingBottom: 10,
+              paddingTop: 16,
+              paddingLeft: 18,
+              paddingRight: 12,
+              paddingBottom: 22,
             }}
           >
             <div
@@ -1659,161 +2169,315 @@ useEffect(() => {
                 columnWidth: PRD_COL_W,
                 columnGap: PRD_COL_GAP,
                 columnFill: 'auto',
-                paddingRight: 10,
+                columnRule: '1px solid rgba(255,255,255,0.04)',
+                paddingRight: 12,
+                paddingBottom: 8,
+                boxSizing: 'border-box',
               }}
             >
-              {[...prd.blocks]
-                .sort((a, b) => a.order - b.order)
-                .map((b) =>
-                  prdMode === 'edit' ? (
-                    <div
-                      key={b.id}
-                      style={{
-                        width: PRD_COL_W,
-                        display: 'inline-block',
-                        verticalAlign: 'top',
-                        marginBottom: 12,
-                        breakInside: 'avoid',
-                        borderRadius: 16,
-                        border: '1px solid rgba(255,255,255,0.08)',
-                        background: 'rgba(255,255,255,0.03)',
-                        boxShadow: '0 10px 26px rgba(0,0,0,0.16)',
-                        padding: 12,
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <input
-                          value={b.label}
-                          onChange={(e) => renamePrdBlock(b.id, e.target.value)}
-                          style={{
-                            flex: 1,
-                            minWidth: 0,
-                            padding: '8px 10px',
-                            borderRadius: 12,
-                            border: '1px solid rgba(255,255,255,0.10)',
-                            background: 'rgba(0,0,0,0.14)',
-                            color: 'inherit',
-                            outline: 'none',
-                            fontWeight: 850,
-                            letterSpacing: 0.15,
-                          }}
-                        />
-
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button
-                            type="button"
-                            onClick={() => movePrdBlock(b.id, -1)}
-                            style={{
-                              padding: '7px 10px',
-                              borderRadius: 12,
-                              border: '1px solid rgba(255,255,255,0.10)',
-                              background: 'rgba(255,255,255,0.03)',
-                              color: 'inherit',
-                              cursor: 'pointer',
-                              fontWeight: 900,
-                            }}
-                            title="Move up"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => movePrdBlock(b.id, 1)}
-                            style={{
-                              padding: '7px 10px',
-                              borderRadius: 12,
-                              border: '1px solid rgba(255,255,255,0.10)',
-                              background: 'rgba(255,255,255,0.03)',
-                              color: 'inherit',
-                              cursor: 'pointer',
-                              fontWeight: 900,
-                            }}
-                            title="Move down"
-                          >
-                            ↓
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => addPrdBlockAfter(b.id)}
-                            style={{
-                              padding: '7px 10px',
-                              borderRadius: 12,
-                              border: '1px solid rgba(255,255,255,0.12)',
-                              background: 'rgba(120,200,255,0.10)',
-                              color: 'inherit',
-                              cursor: 'pointer',
-                              fontWeight: 900,
-                            }}
-                            title="Add block after"
-                          >
-                            +
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deletePrdBlock(b.id)}
-                            style={{
-                              padding: '7px 10px',
-                              borderRadius: 12,
-                              border: '1px solid rgba(255,255,255,0.10)',
-                              background: 'rgba(255,155,155,0.08)',
-                              color: 'rgba(255,210,210,0.95)',
-                              cursor: 'pointer',
-                              fontWeight: 900,
-                            }}
-                            title="Delete block"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-
-                      <textarea
-                        value={b.value}
-                        onChange={(e) => updatePrdBlock(b.id, e.target.value)}
-                        rows={Math.max(4, Math.min(14, 4 + Math.floor((b.value.length || 0) / 140)))}
-                        placeholder="Write here…"
+              {prdBlocksSorted.map((b) => {
+                const toolbarVisible = prdFocusId === b.id;
+                const isInlineEditing = prdInlineEditId === b.id;
+                return prdMode === 'editTemplate' ? (
+                  <div
+                    key={b.id}
+                    style={{
+                      display: 'inline-block',
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      marginBottom: 12,
+                      breakInside: 'avoid',
+                      borderRadius: 16,
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      background: 'rgba(255,255,255,0.03)',
+                      boxShadow: '0 8px 20px rgba(0,0,0,0.14)',
+                      padding: 12,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <input
+                        value={b.label}
+                        onChange={(e) => renamePrdBlock(b.id, e.target.value)}
+                        onBlur={(e) => renamePrdBlock(b.id, e.target.value.trim() || b.label)}
                         style={{
-                          marginTop: 10,
-                          width: '100%',
-                          boxSizing: 'border-box',
-                          padding: '10px 12px',
-                          borderRadius: 14,
+                          flex: 1,
+                          minWidth: 0,
+                          padding: '8px 10px',
+                          borderRadius: 12,
                           border: '1px solid rgba(255,255,255,0.10)',
                           background: 'rgba(0,0,0,0.14)',
                           color: 'inherit',
                           outline: 'none',
-                          fontSize: 14,
-                          lineHeight: 1.4,
-                          resize: 'vertical',
+                          fontWeight: 850,
+                          letterSpacing: 0.15,
                         }}
                       />
+
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onClick={() => movePrdBlock(b.id, -1)}
+                          style={{
+                            padding: '7px 10px',
+                            borderRadius: 12,
+                            border: '1px solid rgba(255,255,255,0.10)',
+                            background: 'rgba(255,255,255,0.03)',
+                            color: 'inherit',
+                            cursor: 'pointer',
+                            fontWeight: 900,
+                          }}
+                          title="Move up"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onClick={() => movePrdBlock(b.id, 1)}
+                          style={{
+                            padding: '7px 10px',
+                            borderRadius: 12,
+                            border: '1px solid rgba(255,255,255,0.10)',
+                            background: 'rgba(255,255,255,0.03)',
+                            color: 'inherit',
+                            cursor: 'pointer',
+                            fontWeight: 900,
+                          }}
+                          title="Move down"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => addPrdBlockAfter(b.id)}
+                          style={{
+                            padding: '7px 10px',
+                            borderRadius: 12,
+                            border: '1px solid rgba(255,255,255,0.12)',
+                            background: 'rgba(120,200,255,0.10)',
+                            color: 'inherit',
+                            cursor: 'pointer',
+                            fontWeight: 900,
+                          }}
+                          title="Add block after"
+                        >
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deletePrdBlock(b.id)}
+                          style={{
+                            padding: '7px 10px',
+                            borderRadius: 12,
+                            border: '1px solid rgba(255,255,255,0.10)',
+                            background: 'rgba(255,155,155,0.08)',
+                            color: 'rgba(255,210,210,0.95)',
+                            cursor: 'pointer',
+                            fontWeight: 900,
+                          }}
+                          title="Delete block"
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
-                  ) : (
-                    <div
-                      key={b.id}
-                      style={{
-                        display: 'block',
-                        breakInside: 'auto',
-                        marginBottom: 18,
-                        padding: '2px 2px 0',
-                      }}
-                    >
+
+                    <div style={{ marginTop: 10 }}>
+                      <PrdToolbar
+                        visible={toolbarVisible}
+                        alwaysVisible
+                        className="prd-toolbar"
+                        onCmd={prdCmd}
+                        onLink={prdLink}
+                      />
+
+                      <InlineRichField
+                        blockId={b.id}
+                        html={prdToHtml(b.value)}
+                        onChangeHtml={(nextHtml) => updatePrdBlock(b.id, nextHtml)}
+                        onFocusBlock={(blockId, el) => {
+                          prdActiveRef.current = el;
+                          setPrdFocusId(blockId);
+                        }}
+                        onBlurBlock={(blockId, nextHtml) => {
+                          updatePrdBlock(blockId, nextHtml);
+                          setPrdFocusId((cur) => (cur === blockId ? null : cur));
+                        }}
+                        placeholder="Write something…"
+                      />
+                    </div>
+                  </div>
+                ) : !isInlineEditing ? (
+                  <div
+                    key={b.id}
+                    style={{
+                      display: 'block',
+                      breakInside: 'auto',
+                      marginBottom: 18,
+                      padding: '2px 2px 0',
+                    }}
+                  >
+                    <>
                       {b.type === 'title' ? (
-                        <h1 style={{ ...prdH1Style, marginBottom: 10 }}>
-                          {b.value?.trim() ? b.value : 'Untitled PRD'}
-                        </h1>
+                        <div
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}
+                          onMouseEnter={() => setPrdHoverId(b.id)}
+                          onMouseLeave={() => setPrdHoverId((cur) => (cur === b.id ? null : cur))}
+                        >
+                          <div
+                            className="prd-rich"
+                            style={{ ...prdH1Style, marginBottom: 0, whiteSpace: 'normal', minWidth: 0 }}
+                            dangerouslySetInnerHTML={{
+                              __html: b.value?.trim() ? prdToHtml(b.value) : '<span style="opacity:0.45">—</span>',
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setPrdInlineEditId(b.id)}
+                            style={{
+                              ...prdPencilBtnStyle,
+                              opacity: prdHoverId === b.id ? 1 : 0,
+                              pointerEvents: prdHoverId === b.id ? 'auto' : 'none',
+                              transition: 'opacity 140ms ease',
+                            }}
+                            aria-label="Edit section"
+                            title="Edit"
+                          >
+                            ✎
+                          </button>
+                        </div>
                       ) : (
-                        <div style={{ ...prdH2Style, marginBottom: 8 }}>{b.label}</div>
+                        <div
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}
+                          onMouseEnter={() => setPrdHoverId(b.id)}
+                          onMouseLeave={() => setPrdHoverId((cur) => (cur === b.id ? null : cur))}
+                        >
+                          <div style={{ ...prdH2Style, marginBottom: 0 }}>{b.label}</div>
+                          <button
+                            type="button"
+                            onClick={() => setPrdInlineEditId(b.id)}
+                            style={{
+                              ...prdPencilBtnStyle,
+                              opacity: prdHoverId === b.id ? 1 : 0,
+                              pointerEvents: prdHoverId === b.id ? 'auto' : 'none',
+                              transition: 'opacity 140ms ease',
+                            }}
+                            aria-label="Edit section"
+                            title="Edit"
+                          >
+                            ✎
+                          </button>
+                        </div>
                       )}
 
-                      <div style={prdBodyStyle}>
-                        {b.value?.trim() ? b.value : <span style={{ opacity: 0.45 }}>—</span>}
-                      </div>
+                      {b.type !== 'title' ? (
+                        <div
+                          className="prd-rich"
+                          style={{ ...prdBodyStyle, whiteSpace: 'normal' }}
+                          dangerouslySetInnerHTML={{
+                            __html: b.value?.trim() ? prdToHtml(b.value) : '<span style="opacity:0.45">—</span>',
+                          }}
+                        />
+                      ) : null}
+                    </>
 
-                      <div style={{ marginTop: 16, height: 1, background: 'rgba(255,255,255,0.06)' }} />
-                    </div>
-                  )
-                )}
+                    <div style={{ marginTop: 16, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+                  </div>
+                ) : (
+                  <div
+                    key={b.id}
+                    data-prd-inline={b.id}
+                    style={{
+                      display: 'inline-block',
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      marginBottom: 12,
+                      breakInside: 'avoid',
+                      borderRadius: 16,
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      background: 'rgba(255,255,255,0.03)',
+                      boxShadow: '0 8px 20px rgba(0,0,0,0.14)',
+                      padding: 12,
+                    }}
+                  >
+                    {b.type === 'title' ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <div
+                          className="prd-rich"
+                          style={{ ...prdH1Style, marginBottom: 0, whiteSpace: 'normal', minWidth: 0 }}
+                          dangerouslySetInnerHTML={{
+                            __html: b.value?.trim() ? prdToHtml(b.value) : '<span style="opacity:0.45">—</span>',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setPrdInlineEditId(null)}
+                          style={{
+                            ...prdPencilBtnStyle,
+                            padding: '4px 8px',
+                            width: 'auto',
+                            height: 'auto',
+                            fontSize: 12,
+                            fontWeight: 800,
+                          }}
+                          title="Done"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <div style={{ ...prdH2Style, marginBottom: 0 }}>{b.label}</div>
+                        <button
+                          type="button"
+                          onClick={() => setPrdInlineEditId(null)}
+                          style={{
+                            ...prdPencilBtnStyle,
+                            padding: '4px 8px',
+                            width: 'auto',
+                            height: 'auto',
+                            fontSize: 12,
+                            fontWeight: 800,
+                          }}
+                          title="Done"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    )}
+
+                    <PrdToolbar
+                      visible={toolbarVisible}
+                      alwaysVisible
+                      className="prd-toolbar"
+                      onCmd={prdCmd}
+                      onLink={prdLink}
+                    />
+
+                    <InlineRichField
+                      blockId={b.id}
+                      html={prdToHtml(b.value)}
+                      onChangeHtml={(nextHtml) => updatePrdBlock(b.id, nextHtml)}
+                      onFocusBlock={(blockId, el) => {
+                        prdActiveRef.current = el;
+                        setPrdFocusId(blockId);
+                      }}
+                      onBlurBlock={(blockId, nextHtml) => {
+                        updatePrdBlock(blockId, nextHtml);
+                        setPrdFocusId((cur) => (cur === blockId ? null : cur));
+                      }}
+                      placeholder="Write something…"
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>
@@ -1892,200 +2556,210 @@ useEffect(() => {
               </div>
 
               <div
-                data-no-snap
                 style={{
                   marginTop: 10,
                   flex: '1 1 auto',
                   minHeight: 0,
-                  width: '100%',
-                  maxWidth: '100%',
-                  overflowX: 'auto',
-                  overflowY: 'hidden',
-                  background: 'transparent',
-                  border: 'none',
-                  borderRadius: 0,
-                  padding: 0,
-                  paddingBottom: BOARD_PAD_BOTTOM,
-                  boxSizing: 'border-box',
+                  display: 'flex',
+                  gap: 14,
+                  alignItems: 'stretch',
                 }}
-                ref={boardRef}
               >
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragStart={(event: DragStartEvent) => setActiveDragId(String(event.active.id))}
-                  onDragCancel={(_event: DragCancelEvent) => setActiveDragId(null)}
-                  onDragEnd={(event: DragEndEvent) => {
-                    const { active, over } = event;
-                    setActiveDragId(null);
-                    if (!over) return;
-                    const activeId = String(active.id);
-                    const overId = String(over.id);
-                    if (activeId === overId) return;
-
-                    setDoc((prev) => {
-                      const activeFeat = prev.features.find((f) => f.id === activeId);
-                      if (!activeFeat) return prev;
-
-                      let destPhaseId: string | null = null;
-                      if (isLaneId(overId)) {
-                        destPhaseId = phaseIdFromLaneId(overId);
-                      } else {
-                        const overFeat = prev.features.find((f) => f.id === overId);
-                        destPhaseId = overFeat?.phaseId ?? null;
-                      }
-                      if (!destPhaseId) return prev;
-
-                      const sourcePhaseId = activeFeat.phaseId;
-                      const movingAcross = sourcePhaseId !== destPhaseId;
-                      const activeFeatNext = movingAcross
-                        ? { ...activeFeat, phaseId: destPhaseId, updatedAt: now() }
-                        : activeFeat;
-
-                      const visible = filteredFeatures;
-                      const visibleByPhase = new Map<string, string[]>();
-                      for (const p of prev.phases) visibleByPhase.set(p.id, []);
-                      for (const f of visible) {
-                        const arr = visibleByPhase.get(f.phaseId) ?? [];
-                        arr.push(f.id);
-                        visibleByPhase.set(f.phaseId, arr);
-                      }
-
-                      const srcVisibleIds = [...(visibleByPhase.get(sourcePhaseId) ?? [])];
-                      const dstVisibleIds = [...(visibleByPhase.get(destPhaseId) ?? [])];
-
-                      const srcIdx = srcVisibleIds.indexOf(activeId);
-                      if (srcIdx !== -1) srcVisibleIds.splice(srcIdx, 1);
-
-                      if (sourcePhaseId === destPhaseId) {
-                        const oldIndex = dstVisibleIds.indexOf(activeId);
-                        const newIndex = dstVisibleIds.indexOf(overId);
-                        if (oldIndex === -1 || newIndex === -1) return prev;
-
-                        const nextIds = arrayMove(dstVisibleIds, oldIndex, newIndex);
-                        visibleByPhase.set(destPhaseId, nextIds);
-                      } else {
-                        let insertAt = dstVisibleIds.length;
-                        if (!isLaneId(overId)) {
-                          const overIndex = dstVisibleIds.indexOf(overId);
-                          if (overIndex !== -1) insertAt = overIndex;
-                        }
-                        dstVisibleIds.splice(insertAt, 0, activeId);
-                        visibleByPhase.set(sourcePhaseId, srcVisibleIds);
-                        visibleByPhase.set(destPhaseId, dstVisibleIds);
-                      }
-
-                      const byId = new Map(prev.features.map((f) => [f.id, f]));
-                      byId.set(activeId, activeFeatNext);
-                      const nextFeatures: Feature[] = [];
-
-                      const phasesOrdered = [...prev.phases].sort((a, b) => a.order - b.order);
-                      for (const ph of phasesOrdered) {
-                        const visIds = visibleByPhase.get(ph.id) ?? [];
-                        const visSet = new Set(visIds);
-
-                        const vis = visIds.map((id) => byId.get(id)).filter(Boolean) as Feature[];
-
-                        const nonVis = prev.features
-                          .filter((f) => f.id !== activeId)
-                          .filter((f) => f.phaseId === ph.id && !visSet.has(f.id))
-                          .sort((a, b) => a.order - b.order);
-
-                        nextFeatures.push(...vis, ...nonVis);
-                      }
-
-                      const seen = new Set<string>();
-                      const uniqueNext = nextFeatures.filter((f) => {
-                        if (seen.has(f.id)) return false;
-                        seen.add(f.id);
-                        return true;
-                      });
-
-                      const normalized = uniqueNext.map((f, idx) => ({
-                        ...f,
-                        order: idx + 1,
-                      }));
-
-                      return { ...prev, features: normalized };
-                    });
+                <div
+                  data-no-snap
+                  style={{
+                    flex: '1 1 auto',
+                    minWidth: 0,
+                    overflowX: 'auto',
+                    overflowY: 'hidden',
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: 0,
+                    padding: 0,
+                    paddingBottom: BOARD_PAD_BOTTOM,
+                    boxSizing: 'border-box',
                   }}
+                  ref={boardRef}
                 >
-                  <div
-                    style={{
-                      height: '100%',
-                      width: 'max-content',
-                      display: 'flex',
-                      gap: 16,
-                      paddingRight: 12,
-                      overflow: 'hidden',
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragStart={(event: DragStartEvent) => setActiveDragId(String(event.active.id))}
+                    onDragCancel={(_event: DragCancelEvent) => setActiveDragId(null)}
+                    onDragEnd={(event: DragEndEvent) => {
+                      const { active, over } = event;
+                      setActiveDragId(null);
+                      if (!over) return;
+                      const activeId = String(active.id);
+                      const overId = String(over.id);
+                      if (activeId === overId) return;
+
+                      setDoc((prev) => {
+                        const activeFeat = prev.features.find((f) => f.id === activeId);
+                        if (!activeFeat) return prev;
+
+                        let destPhaseId: string | null = null;
+                        if (isLaneId(overId)) {
+                          destPhaseId = phaseIdFromLaneId(overId);
+                        } else {
+                          const overFeat = prev.features.find((f) => f.id === overId);
+                          destPhaseId = overFeat?.phaseId ?? null;
+                        }
+                        if (!destPhaseId) return prev;
+
+                        const sourcePhaseId = activeFeat.phaseId;
+                        const movingAcross = sourcePhaseId !== destPhaseId;
+                        const activeFeatNext = movingAcross
+                          ? { ...activeFeat, phaseId: destPhaseId, updatedAt: now() }
+                          : activeFeat;
+
+                        const visible = filteredFeatures;
+                        const visibleByPhase = new Map<string, string[]>();
+                        for (const p of prev.phases) visibleByPhase.set(p.id, []);
+                        for (const f of visible) {
+                          const arr = visibleByPhase.get(f.phaseId) ?? [];
+                          arr.push(f.id);
+                          visibleByPhase.set(f.phaseId, arr);
+                        }
+
+                        const srcVisibleIds = [...(visibleByPhase.get(sourcePhaseId) ?? [])];
+                        const dstVisibleIds = [...(visibleByPhase.get(destPhaseId) ?? [])];
+
+                        const srcIdx = srcVisibleIds.indexOf(activeId);
+                        if (srcIdx !== -1) srcVisibleIds.splice(srcIdx, 1);
+
+                        if (sourcePhaseId === destPhaseId) {
+                          const oldIndex = dstVisibleIds.indexOf(activeId);
+                          const newIndex = dstVisibleIds.indexOf(overId);
+                          if (oldIndex === -1 || newIndex === -1) return prev;
+
+                          const nextIds = arrayMove(dstVisibleIds, oldIndex, newIndex);
+                          visibleByPhase.set(destPhaseId, nextIds);
+                        } else {
+                          let insertAt = dstVisibleIds.length;
+                          if (!isLaneId(overId)) {
+                            const overIndex = dstVisibleIds.indexOf(overId);
+                            if (overIndex !== -1) insertAt = overIndex;
+                          }
+                          dstVisibleIds.splice(insertAt, 0, activeId);
+                          visibleByPhase.set(sourcePhaseId, srcVisibleIds);
+                          visibleByPhase.set(destPhaseId, dstVisibleIds);
+                        }
+
+                        const byId = new Map(prev.features.map((f) => [f.id, f]));
+                        byId.set(activeId, activeFeatNext);
+                        const nextFeatures: Feature[] = [];
+
+                        const phasesOrdered = [...prev.phases].sort((a, b) => a.order - b.order);
+                        for (const ph of phasesOrdered) {
+                          const visIds = visibleByPhase.get(ph.id) ?? [];
+                          const visSet = new Set(visIds);
+
+                          const vis = visIds.map((id) => byId.get(id)).filter(Boolean) as Feature[];
+
+                          const nonVis = prev.features
+                            .filter((f) => f.id !== activeId)
+                            .filter((f) => f.phaseId === ph.id && !visSet.has(f.id))
+                            .sort((a, b) => a.order - b.order);
+
+                          nextFeatures.push(...vis, ...nonVis);
+                        }
+
+                        const seen = new Set<string>();
+                        const uniqueNext = nextFeatures.filter((f) => {
+                          if (seen.has(f.id)) return false;
+                          seen.add(f.id);
+                          return true;
+                        });
+
+                        const normalized = uniqueNext.map((f, idx) => ({
+                          ...f,
+                          order: idx + 1,
+                        }));
+
+                        return { ...prev, features: normalized };
+                      });
                     }}
                   >
-                    {[...doc.phases]
-                      .sort((a, b) => a.order - b.order)
-                      .filter((p) => phaseFilter === 'all' || p.id === phaseFilter)
-                      .map((p) => {
-                        const inLane = filteredFeatures.filter((f) => f.phaseId === p.id);
-                        return <PhaseLane key={p.id} phase={p} features={inLane} />;
-                      })}
-                    <button
-                      type="button"
-                      onClick={createPhaseAtEnd}
+                    <div
                       style={{
-                        width: 72,
-                        minWidth: 72,
-                        borderRadius: 16,
-                        border: '1px dashed rgba(255,255,255,0.14)',
-                        background: 'rgba(255,255,255,0.02)',
-                        color: 'rgba(255,255,255,0.82)',
-                        boxShadow: '0 10px 26px rgba(0,0,0,0.12)',
-                        cursor: 'pointer',
+                        height: '100%',
+                        width: 'max-content',
                         display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 8,
-                        padding: 10,
-                        userSelect: 'none',
+                        gap: 16,
+                        paddingRight: 12,
+                        overflow: 'hidden',
                       }}
-                      title="Add a new phase"
                     >
-                      <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1 }}>+</div>
-                      <div
+                      {[...doc.phases]
+                        .sort((a, b) => a.order - b.order)
+                        .filter((p) => phaseFilter === 'all' || p.id === phaseFilter)
+                        .map((p) => {
+                          const inLane = filteredFeatures.filter((f) => f.phaseId === p.id);
+                          return <PhaseLane key={p.id} phase={p} features={inLane} />;
+                        })}
+                      <button
+                        type="button"
+                        onClick={createPhaseAtEnd}
                         style={{
-                          fontSize: 12,
-                          fontWeight: 800,
-                          opacity: 0.8,
-                          writingMode: 'vertical-rl',
-                          transform: 'rotate(180deg)',
+                          width: 72,
+                          minWidth: 72,
+                          borderRadius: 16,
+                          border: '1px dashed rgba(255,255,255,0.14)',
+                          background: 'rgba(255,255,255,0.02)',
+                          color: 'rgba(255,255,255,0.82)',
+                          boxShadow: '0 10px 26px rgba(0,0,0,0.12)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 8,
+                          padding: 10,
+                          userSelect: 'none',
                         }}
+                        title="Add a new phase"
                       >
-                        Phase
-                      </div>
-                    </button>
-                  </div>
-                  <DragOverlay>
-                    {activeDragId
-                      ? (() => {
-                          const activeFeature = doc.features.find((x) => x.id === activeDragId);
-                          if (!activeFeature) return null;
-                          return (
-                            <div
-                              style={{
-                                ...cardBase,
-                                width: 300,
-                                boxShadow: '0 20px 55px rgba(0,0,0,0.55)',
-                                transform: 'scale(1.02)',
-                                opacity: 0.98,
-                                pointerEvents: 'none',
-                              }}
-                            >
-                              <CardPreview feature={activeFeature} isSelected={activeFeature.id === selectedId} />
-                            </div>
-                          );
-                        })()
-                      : null}
-                  </DragOverlay>
-                </DndContext>
+                        <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1 }}>+</div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            opacity: 0.8,
+                            writingMode: 'vertical-rl',
+                            transform: 'rotate(180deg)',
+                          }}
+                        >
+                          Phase
+                        </div>
+                      </button>
+                    </div>
+                    <DragOverlay>
+                      {activeDragId
+                        ? (() => {
+                            const activeFeature = doc.features.find((x) => x.id === activeDragId);
+                            if (!activeFeature) return null;
+                            return (
+                              <div
+                                style={{
+                                  ...cardBase,
+                                  width: 300,
+                                  boxShadow: '0 20px 55px rgba(0,0,0,0.55)',
+                                  transform: 'scale(1.02)',
+                                  opacity: 0.98,
+                                  pointerEvents: 'none',
+                                }}
+                              >
+                                <CardPreview feature={activeFeature} isSelected={activeFeature.id === selectedId} />
+                              </div>
+                            );
+                          })()
+                        : null}
+                    </DragOverlay>
+                  </DndContext>
+                </div>
+
+                {detailsOpen && detailsFeature ? <FeatureDetailsPanel feature={detailsFeature} /> : null}
               </div>
             </div>
           </div>
@@ -2599,6 +3273,15 @@ useEffect(() => {
           </div>
         </div>
       ) : null}
+      <style>{`
+        .prd-rich h1 { margin: 10px 0 8px; font-size: 28px; line-height: 1.12; letter-spacing: -0.2px; }
+        .prd-rich h2 { margin: 10px 0 6px; font-size: 18px; line-height: 1.2; font-weight: 900; }
+        .prd-rich p { margin: 6px 0; }
+        .prd-rich ul, .prd-rich ol { margin: 6px 0; padding-left: 22px; }
+        .prd-rich li { margin: 2px 0; }
+        .prd-rich a { color: rgba(120,200,255,0.95); text-decoration: underline; }
+        .prd-toolbar::-webkit-scrollbar { display: none; }
+      `}</style>
     </div>
   );
 }
