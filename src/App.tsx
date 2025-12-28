@@ -65,39 +65,73 @@ function seedDoc(): WorkbenchDoc {
   return { version: 1, title: 'Workbench', phases: [phase1, phase2], features };
 }
 
-const STATUS_META: Record<
-  FeatureStatus,
-  { label: string; bar: string; chipBg: string; chipBorder: string; chipText: string }
-> = {
-  not_started: {
-    label: 'Not started',
-    bar: 'linear-gradient(90deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04))',
-    chipBg: 'rgba(255,255,255,0.06)',
-    chipBorder: 'rgba(255,255,255,0.10)',
-    chipText: 'rgba(255,255,255,0.82)',
-  },
-  in_progress: {
-    label: 'In progress',
-    bar: 'linear-gradient(90deg, rgba(88,166,255,0.55), rgba(88,166,255,0.10))',
-    chipBg: 'rgba(88,166,255,0.14)',
-    chipBorder: 'rgba(88,166,255,0.30)',
-    chipText: 'rgba(210,235,255,0.92)',
-  },
-  done: {
-    label: 'Done',
-    bar: 'linear-gradient(90deg, rgba(63,185,120,0.55), rgba(63,185,120,0.10))',
-    chipBg: 'rgba(63,185,120,0.14)',
-    chipBorder: 'rgba(63,185,120,0.32)',
-    chipText: 'rgba(210,255,230,0.92)',
-  },
-  blocked: {
-    label: 'Blocked',
-    bar: 'linear-gradient(90deg, rgba(255,99,99,0.55), rgba(255,99,99,0.10))',
-    chipBg: 'rgba(255,99,99,0.14)',
-    chipBorder: 'rgba(255,99,99,0.32)',
-    chipText: 'rgba(255,220,220,0.92)',
-  },
-};
+function buildStatusMeta(
+  mode: ThemeMode
+): Record<FeatureStatus, { label: string; bar: string; chipBg: string; chipBorder: string; chipText: string }> {
+  if (mode === 'light') {
+    return {
+      not_started: {
+        label: 'Not started',
+        bar: 'linear-gradient(90deg, rgba(10,16,24,0.10), rgba(10,16,24,0.04))',
+        chipBg: 'rgba(10,16,24,0.06)',
+        chipBorder: 'rgba(10,16,24,0.18)',
+        chipText: 'rgba(10,16,24,0.78)',
+      },
+      in_progress: {
+        label: 'In progress',
+        bar: 'linear-gradient(90deg, rgba(30,120,255,0.35), rgba(30,120,255,0.08))',
+        chipBg: 'rgba(30,120,255,0.14)',
+        chipBorder: 'rgba(30,120,255,0.30)',
+        chipText: 'rgba(10,16,24,0.82)',
+      },
+      done: {
+        label: 'Done',
+        bar: 'linear-gradient(90deg, rgba(35,160,95,0.32), rgba(35,160,95,0.08))',
+        chipBg: 'rgba(35,160,95,0.14)',
+        chipBorder: 'rgba(35,160,95,0.30)',
+        chipText: 'rgba(10,16,24,0.82)',
+      },
+      blocked: {
+        label: 'Blocked',
+        bar: 'linear-gradient(90deg, rgba(235,70,70,0.30), rgba(235,70,70,0.08))',
+        chipBg: 'rgba(235,70,70,0.14)',
+        chipBorder: 'rgba(235,70,70,0.30)',
+        chipText: 'rgba(10,16,24,0.82)',
+      },
+    };
+  }
+
+  return {
+    not_started: {
+      label: 'Not started',
+      bar: 'linear-gradient(90deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04))',
+      chipBg: 'rgba(255,255,255,0.06)',
+      chipBorder: 'rgba(255,255,255,0.10)',
+      chipText: 'rgba(255,255,255,0.82)',
+    },
+    in_progress: {
+      label: 'In progress',
+      bar: 'linear-gradient(90deg, rgba(88,166,255,0.55), rgba(88,166,255,0.10))',
+      chipBg: 'rgba(88,166,255,0.14)',
+      chipBorder: 'rgba(88,166,255,0.30)',
+      chipText: 'rgba(210,235,255,0.92)',
+    },
+    done: {
+      label: 'Done',
+      bar: 'linear-gradient(90deg, rgba(63,185,120,0.55), rgba(63,185,120,0.10))',
+      chipBg: 'rgba(63,185,120,0.14)',
+      chipBorder: 'rgba(63,185,120,0.32)',
+      chipText: 'rgba(210,255,230,0.92)',
+    },
+    blocked: {
+      label: 'Blocked',
+      bar: 'linear-gradient(90deg, rgba(255,99,99,0.55), rgba(255,99,99,0.10))',
+      chipBg: 'rgba(255,99,99,0.14)',
+      chipBorder: 'rgba(255,99,99,0.32)',
+      chipText: 'rgba(255,220,220,0.92)',
+    },
+  };
+}
 
 type CtxTarget =
   | { kind: 'feature'; id: string }
@@ -110,13 +144,25 @@ type CtxMenuState = {
   target: CtxTarget;
 };
 
-const STATUS_OPTIONS: Array<{ value: FeatureStatus | 'all'; label: string }> = [
-  { value: 'all', label: 'All statuses' },
-  { value: 'not_started', label: STATUS_META.not_started.label },
-  { value: 'in_progress', label: STATUS_META.in_progress.label },
-  { value: 'done', label: STATUS_META.done.label },
-  { value: 'blocked', label: STATUS_META.blocked.label },
-];
+type ThemeMode = 'dark' | 'light';
+
+function loadTheme(): ThemeMode {
+  try {
+    const raw = localStorage.getItem('workbench_theme');
+    if (raw === 'light' || raw === 'dark') return raw;
+  } catch {
+    // ignore
+  }
+  return 'dark';
+}
+
+function saveTheme(mode: ThemeMode) {
+  try {
+    localStorage.setItem('workbench_theme', mode);
+  } catch {
+    // ignore
+  }
+}
 
 function nextOrder(doc: WorkbenchDoc) {
   const max = doc.features.reduce((m, f) => Math.max(m, f.order), 0);
@@ -245,7 +291,6 @@ function firstPhaseId(phases: Phase[]) {
 const CARD_W = 320;
 const CARD_MIN_H = 155;
 const CARD_MAX_H = 195;
-const DEBUG_CARD_EDIT = false;
 const GRID_ROW_GAP = 10;
 const GRID_COL_GAP = 16;
 const BOARD_PAD_BOTTOM = 16;
@@ -282,6 +327,11 @@ type InlineRichFieldProps = {
   html: string;
   onChangeHtml: (nextHtml: string) => void;
   placeholder: string;
+  themeVars: {
+    border: string;
+    inputBg: string;
+    placeholder: string;
+  };
   onFocusBlock: (blockId: string, el: HTMLDivElement) => void;
   onBlurBlock: (blockId: string, nextHtml: string) => void;
 };
@@ -291,6 +341,7 @@ const InlineRichField = memo(function InlineRichField({
   html,
   onChangeHtml,
   placeholder,
+  themeVars,
   onFocusBlock,
   onBlurBlock,
 }: InlineRichFieldProps) {
@@ -329,8 +380,8 @@ const InlineRichField = memo(function InlineRichField({
           boxSizing: 'border-box',
           padding: '14px 14px',
           borderRadius: 14,
-          border: '1px solid rgba(255,255,255,0.10)',
-          background: 'rgba(0,0,0,0.14)',
+          border: `1px solid ${themeVars.border}`,
+          background: themeVars.inputBg,
           color: 'inherit',
           outline: 'none',
           fontSize: 14,
@@ -347,7 +398,7 @@ const InlineRichField = memo(function InlineRichField({
             left: 14,
             top: 14,
             right: 14,
-            color: 'rgba(255,255,255,0.34)',
+            color: themeVars.placeholder,
             fontSize: 14,
             pointerEvents: 'none',
             userSelect: 'none',
@@ -366,6 +417,12 @@ type PrdToolbarProps = {
   className?: string;
   onCmd: (cmd: string, val?: string) => void;
   onLink: () => void;
+  toolBtnStyle: React.CSSProperties;
+  themeVars: {
+    border: string;
+    panelBg2: string;
+    divider: string;
+  };
 };
 
 const PrdToolbar = memo(function PrdToolbar({
@@ -374,6 +431,8 @@ const PrdToolbar = memo(function PrdToolbar({
   className,
   onCmd,
   onLink,
+  toolBtnStyle,
+  themeVars,
 }: PrdToolbarProps) {
   const isVisible = alwaysVisible || visible;
 
@@ -392,8 +451,8 @@ const PrdToolbar = memo(function PrdToolbar({
         paddingBottom: 4,
         padding: 8,
         borderRadius: 14,
-        border: '1px solid rgba(255,255,255,0.10)',
-        background: 'rgba(0,0,0,0.10)',
+        border: `1px solid ${themeVars.border}`,
+        background: themeVars.panelBg2,
         minHeight: 44,
         opacity: isVisible ? 1 : 0,
         pointerEvents: isVisible ? 'auto' : 'none',
@@ -403,49 +462,49 @@ const PrdToolbar = memo(function PrdToolbar({
       }}
       onMouseDown={(e) => e.preventDefault()}
     >
-      <button type="button" onClick={() => onCmd('bold')} style={prdToolBtn}>
+      <button type="button" onClick={() => onCmd('bold')} style={toolBtnStyle}>
         B
       </button>
-      <button type="button" onClick={() => onCmd('italic')} style={prdToolBtn}>
+      <button type="button" onClick={() => onCmd('italic')} style={toolBtnStyle}>
         <em>I</em>
       </button>
-      <button type="button" onClick={() => onCmd('underline')} style={prdToolBtn}>
+      <button type="button" onClick={() => onCmd('underline')} style={toolBtnStyle}>
         <u>U</u>
       </button>
 
-      <div style={{ width: 1, background: 'rgba(255,255,255,0.10)', margin: '0 4px' }} />
+      <div style={{ width: 1, background: themeVars.divider, margin: '0 4px' }} />
 
-      <button type="button" onClick={() => onCmd('insertUnorderedList')} style={prdToolBtn}>
+      <button type="button" onClick={() => onCmd('insertUnorderedList')} style={toolBtnStyle}>
         • List
       </button>
-      <button type="button" onClick={() => onCmd('insertOrderedList')} style={prdToolBtn}>
+      <button type="button" onClick={() => onCmd('insertOrderedList')} style={toolBtnStyle}>
         1. List
       </button>
 
-      <div style={{ width: 1, background: 'rgba(255,255,255,0.10)', margin: '0 4px' }} />
+      <div style={{ width: 1, background: themeVars.divider, margin: '0 4px' }} />
 
-      <button type="button" onClick={() => onCmd('formatBlock', 'H1')} style={prdToolBtn}>
+      <button type="button" onClick={() => onCmd('formatBlock', 'H1')} style={toolBtnStyle}>
         H1
       </button>
-      <button type="button" onClick={() => onCmd('formatBlock', 'H2')} style={prdToolBtn}>
+      <button type="button" onClick={() => onCmd('formatBlock', 'H2')} style={toolBtnStyle}>
         H2
       </button>
-      <button type="button" onClick={() => onCmd('formatBlock', 'P')} style={prdToolBtn}>
+      <button type="button" onClick={() => onCmd('formatBlock', 'P')} style={toolBtnStyle}>
         Body
       </button>
 
-      <div style={{ width: 1, background: 'rgba(255,255,255,0.10)', margin: '0 4px' }} />
+      <div style={{ width: 1, background: themeVars.divider, margin: '0 4px' }} />
 
-      <button type="button" onClick={onLink} style={prdToolBtn}>
+      <button type="button" onClick={onLink} style={toolBtnStyle}>
         Link
       </button>
-      <button type="button" onClick={() => onCmd('removeFormat')} style={prdToolBtn}>
+      <button type="button" onClick={() => onCmd('removeFormat')} style={toolBtnStyle}>
         Clear
       </button>
 
       <label
         style={{
-          ...prdToolBtn,
+          ...toolBtnStyle,
           display: 'inline-flex',
           alignItems: 'center',
           gap: 8,
@@ -472,18 +531,234 @@ const PrdToolbar = memo(function PrdToolbar({
   );
 });
 
-const prdToolBtn: React.CSSProperties = {
-  padding: '6px 9px',
-  borderRadius: 12,
-  border: '1px solid rgba(255,255,255,0.12)',
-  background: 'rgba(255,255,255,0.03)',
-  color: 'inherit',
-  fontWeight: 900,
-  fontSize: 12,
-};
+function PhaseFromSpaceView({
+  doc,
+  onOpenPhase,
+  onShowAll,
+  themeVars,
+  statusMeta,
+  isLight,
+}: {
+  doc: WorkbenchDoc;
+  onOpenPhase: (phaseId: string) => void;
+  onShowAll: () => void;
+  themeVars: {
+    panelBg2: string;
+    panelBg3: string;
+    border: string;
+    borderSoft: string;
+    appText: string;
+    muted: string;
+    muted2: string;
+    shadow2: string;
+  };
+  statusMeta: Record<
+    FeatureStatus,
+    { label: string; bar: string; chipBg: string; chipBorder: string; chipText: string }
+  >;
+  isLight: boolean;
+}) {
+  const phases = [...doc.phases].sort((a, b) => a.order - b.order);
+
+  const byPhase = new Map<
+    string,
+    {
+      total: number;
+      counts: Record<FeatureStatus, number>;
+      top: Feature[];
+      donePct: number;
+    }
+  >();
+
+  for (const p of phases) {
+    const items = doc.features.filter((f) => f.phaseId === p.id);
+    const counts: Record<FeatureStatus, number> = {
+      not_started: 0,
+      in_progress: 0,
+      blocked: 0,
+      done: 0,
+    };
+
+    for (const f of items) counts[f.status]++;
+
+    const total = items.length;
+    const donePct = total ? Math.round((counts.done / total) * 100) : 0;
+
+    // “From space” = show a few actionable items, not everything
+    const top = items
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .filter((f) => f.status !== 'done')
+      .slice(0, 4);
+
+    byPhase.set(p.id, { total, counts, top, donePct });
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+        <div
+          style={{
+            fontWeight: 950,
+            fontSize: 18,
+            opacity: 0.95,
+            color: themeVars.appText,
+            letterSpacing: 0.1,
+          }}
+        >
+          Phase “from space” view
+        </div>
+        <button
+          type="button"
+          onClick={onShowAll}
+          style={{
+            padding: '8px 10px',
+            borderRadius: 10,
+            border: `1px solid ${themeVars.border}`,
+            background: themeVars.panelBg3,
+            color: themeVars.appText,
+            cursor: 'pointer',
+            fontWeight: 850,
+            fontSize: 12,
+          }}
+          title="Show all phases in Roadmap"
+        >
+          Show all in Roadmap
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gap: 12,
+          minHeight: 0,
+        }}
+      >
+        {phases.map((p) => {
+          const meta = byPhase.get(p.id)!;
+
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onOpenPhase(p.id)}
+              style={{
+                textAlign: 'left',
+                borderRadius: 16,
+                border: `1px solid ${themeVars.border}`,
+                background: themeVars.panelBg3,
+                boxShadow: themeVars.shadow2,
+                padding: 12,
+                cursor: 'pointer',
+                display: 'grid',
+                gap: 10,
+              }}
+              title="Open this phase in Roadmap"
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+                <div
+                  style={{
+                    fontWeight: 950,
+                    fontSize: 14,
+                    opacity: 0.95,
+                    minWidth: 0,
+                    color: themeVars.appText,
+                  }}
+                >
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                    {p.name || 'Untitled phase'}
+                  </span>
+                </div>
+                <div style={{ fontWeight: 850, fontSize: 12, color: themeVars.muted }}>
+                  {meta.donePct}% · {meta.total}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  height: 8,
+                  borderRadius: 999,
+                  background: themeVars.panelBg2,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${meta.donePct}%`,
+                    borderRadius: 999,
+                    background: isLight ? 'rgba(10,16,24,0.18)' : themeVars.borderSoft,
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {(['not_started', 'in_progress', 'blocked', 'done'] as FeatureStatus[]).map((s) => (
+                  <div
+                    key={s}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: 999,
+                      border: `1px solid ${statusMeta[s].chipBorder}`,
+                      background: statusMeta[s].chipBg,
+                      color: statusMeta[s].chipText,
+                      fontSize: 11,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {statusMeta[s].label}: {meta.counts[s]}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'grid', gap: 6 }}>
+                {meta.top.length ? (
+                  meta.top.map((f) => (
+                    <div
+                      key={f.id}
+                      style={{
+                        fontSize: 12,
+                        opacity: 0.82,
+                        lineHeight: 1.25,
+                        color: themeVars.appText,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                      title={f.title}
+                    >
+                      • {f.title || '(untitled)'}
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ fontSize: 12, color: themeVars.muted2 }}>No open items.</div>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [doc, setDoc] = useState<WorkbenchDoc>(() => loadDoc() ?? seedDoc());
+  const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
+
+  useEffect(() => {
+    saveTheme(theme);
+  }, [theme]);
+
+  const STATUS_META = useMemo(() => buildStatusMeta(theme), [theme]);
+  const STATUS_OPTIONS: Array<{ value: FeatureStatus | 'all'; label: string }> = [
+    { value: 'all', label: 'All statuses' },
+    { value: 'not_started', label: STATUS_META.not_started.label },
+    { value: 'in_progress', label: STATUS_META.in_progress.label },
+    { value: 'done', label: STATUS_META.done.label },
+    { value: 'blocked', label: STATUS_META.blocked.label },
+  ];
 
   // Filters
   const ALL_STATUSES: FeatureStatus[] = ['not_started', 'in_progress', 'blocked', 'done'];
@@ -594,12 +869,12 @@ export default function App() {
       },
     });
     const computedBorderColor = isDragging
-      ? 'rgba(255,255,255,0.11)'
+      ? themeVars.border
       : isHovering
-        ? 'rgba(255,255,255,0.11)'
+        ? themeVars.border
         : isDetailsActive
           ? 'rgba(120,200,255,0.28)'
-          : 'rgba(255,255,255,0.075)';
+          : themeVars.borderSoft;
     const dragStyle = {
       transform: transform ? CSS.Transform.toString(transform) : undefined,
       transition,
@@ -755,7 +1030,7 @@ export default function App() {
             background: meta.bar,
             boxShadow: isDetailsActive ? 'inset 0 1px 0 rgba(255,255,255,0.10)' : undefined,
             filter: isDetailsActive ? 'saturate(1.05)' : undefined,
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            borderBottom: `1px solid ${themeVars.divider}`,
           }}
         >
           <div
@@ -806,8 +1081,8 @@ export default function App() {
                   fontSize: 16,
                   lineHeight: 1.2,
                   borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.14)',
-                  background: 'rgba(0,0,0,0.18)',
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.inputBg2,
                   color: 'inherit',
                   padding: '6px 8px',
                   outline: 'none',
@@ -991,9 +1266,9 @@ export default function App() {
                 style={{
                   padding: '4px 8px',
                   borderRadius: 999,
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  background: 'rgba(255,255,255,0.04)',
-                  color: 'rgba(255,255,255,0.82)',
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.panelBg2,
+                  color: themeVars.appText,
                   cursor: 'pointer',
                   fontSize: 12,
                   fontWeight: 800,
@@ -1012,7 +1287,7 @@ export default function App() {
 
   function CardPreview({ feature: f, isSelected }: { feature: Feature; isSelected: boolean }) {
     const meta = STATUS_META[f.status];
-    const computedBorderColor = 'rgba(255,255,255,0.11)';
+    const computedBorderColor = themeVars.border;
     return (
       <div
         data-feature-id={f.id}
@@ -1038,7 +1313,7 @@ export default function App() {
             borderTopLeftRadius: 12,
             borderTopRightRadius: 12,
             background: meta.bar,
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            borderBottom: `1px solid ${themeVars.divider}`,
           }}
         >
           <div
@@ -1154,9 +1429,9 @@ export default function App() {
           padding: 10,
           overflow: 'hidden',
           borderRadius: 16,
-          border: '1px solid rgba(255,255,255,0.06)',
-          background: isOver ? 'rgba(255,255,255,0.045)' : 'rgba(255,255,255,0.02)',
-          boxShadow: '0 10px 26px rgba(0,0,0,0.18)',
+          border: `1px solid ${themeVars.borderSoft}`,
+          background: isOver ? themeVars.panelBg3 : themeVars.panelBg,
+          boxShadow: themeVars.shadow1,
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
         }}
@@ -1202,8 +1477,8 @@ export default function App() {
                   fontSize: 14,
                   lineHeight: 1.2,
                   borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.14)',
-                  background: 'rgba(0,0,0,0.18)',
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.inputBg2,
                   color: 'inherit',
                   padding: '6px 8px',
                   outline: 'none',
@@ -1218,8 +1493,8 @@ export default function App() {
                   cursor: 'text',
                   padding: '4px 8px',
                   borderRadius: 10,
-                  border: hoverPhaseId === phase.id ? '1px solid rgba(255,255,255,0.14)' : '1px solid transparent',
-                  background: hoverPhaseId === phase.id ? 'rgba(255,255,255,0.05)' : 'transparent',
+                  border: hoverPhaseId === phase.id ? `1px solid ${themeVars.border}` : '1px solid transparent',
+                  background: hoverPhaseId === phase.id ? themeVars.panelBg2 : 'transparent',
                   transition: 'background 140ms ease, border-color 140ms ease, transform 140ms ease',
                   transform: hoverPhaseId === phase.id ? 'translateY(-0.5px)' : 'translateY(0px)',
                   whiteSpace: 'normal',
@@ -1302,9 +1577,9 @@ export default function App() {
           maxHeight: '100%',
           overflow: 'hidden',
           borderRadius: 18,
-          border: '1px solid rgba(255,255,255,0.10)',
-          background: 'rgba(255,255,255,0.04)',
-          boxShadow: '0 18px 48px rgba(0,0,0,0.35)',
+          border: `1px solid ${themeVars.border}`,
+          background: themeVars.panelBg3,
+          boxShadow: themeVars.shadow3,
           backdropFilter: 'blur(14px)',
           WebkitBackdropFilter: 'blur(14px)',
           display: 'flex',
@@ -1317,7 +1592,7 @@ export default function App() {
         <div
           style={{
             padding: 14,
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            borderBottom: `1px solid ${themeVars.divider}`,
             background: meta.bar,
             borderTopLeftRadius: 18,
             borderTopRightRadius: 18,
@@ -1360,8 +1635,8 @@ export default function App() {
               style={{
                 padding: '8px 10px',
                 borderRadius: 12,
-                border: '1px solid rgba(255,255,255,0.12)',
-                background: 'rgba(0,0,0,0.16)',
+                border: `1px solid ${themeVars.border}`,
+                background: themeVars.panelBg2,
                 color: 'inherit',
                 cursor: 'pointer',
                 fontWeight: 900,
@@ -1393,7 +1668,7 @@ export default function App() {
         <div
           style={{
             padding: 14,
-            borderTop: '1px solid rgba(255,255,255,0.08)',
+            borderTop: `1px solid ${themeVars.divider}`,
             display: 'flex',
             gap: 10,
             justifyContent: 'flex-end',
@@ -1405,7 +1680,7 @@ export default function App() {
             style={{
               padding: '10px 12px',
               borderRadius: 14,
-              border: '1px solid rgba(255,255,255,0.14)',
+              border: `1px solid ${themeVars.border}`,
               background: 'rgba(120,200,255,0.12)',
               color: 'inherit',
               cursor: 'pointer',
@@ -2090,6 +2365,65 @@ useEffect(() => {
   }, [doc.features, selectedId]);
 
   // Pretty minimal styling
+  const themeVars = useMemo(() => {
+    const dark = {
+      appBg: '#0b0f14',
+      appText: 'rgba(255,255,255,0.92)',
+
+      panelBg: 'rgba(255,255,255,0.02)',
+      panelBg2: 'rgba(255,255,255,0.03)',
+      panelBg3: 'rgba(255,255,255,0.04)',
+      panelBgStrong: 'rgba(24,24,24,0.94)',
+
+      border: 'rgba(255,255,255,0.10)',
+      borderSoft: 'rgba(255,255,255,0.075)',
+      divider: 'rgba(255,255,255,0.08)',
+
+      muted: 'rgba(255,255,255,0.65)',
+      muted2: 'rgba(255,255,255,0.55)',
+      placeholder: 'rgba(255,255,255,0.34)',
+
+      inputBg: 'rgba(0,0,0,0.14)',
+      inputBg2: 'rgba(0,0,0,0.18)',
+      overlay: 'rgba(0,0,0,0.35)',
+
+      shadow1: '0 8px 22px rgba(0,0,0,0.20)',
+      shadow2: '0 14px 34px rgba(0,0,0,0.28)',
+      shadow3: '0 18px 42px rgba(0,0,0,0.45)',
+      shadowPop: '0 14px 32px rgba(0,0,0,0.38)',
+    };
+
+    const light = {
+      appBg: '#f5f7fb',
+      appText: 'rgba(10,16,24,0.92)',
+
+      panelBg: 'rgba(10,16,24,0.03)',
+      panelBg2: 'rgba(10,16,24,0.05)',
+      panelBg3: 'rgba(10,16,24,0.06)',
+      panelBgStrong: 'rgba(255,255,255,0.92)',
+
+      border: 'rgba(10,16,24,0.14)',
+      borderSoft: 'rgba(10,16,24,0.11)',
+      divider: 'rgba(10,16,24,0.12)',
+
+      muted: 'rgba(10,16,24,0.62)',
+      muted2: 'rgba(10,16,24,0.52)',
+      placeholder: 'rgba(10,16,24,0.38)',
+
+      inputBg: 'rgba(255,255,255,0.75)',
+      inputBg2: 'rgba(255,255,255,0.86)',
+      overlay: 'rgba(10,16,24,0.30)',
+
+      shadow1: '0 10px 26px rgba(10,16,24,0.10)',
+      shadow2: '0 16px 38px rgba(10,16,24,0.14)',
+      shadow3: '0 20px 50px rgba(10,16,24,0.18)',
+      shadowPop: '0 18px 44px rgba(10,16,24,0.16)',
+    };
+
+    return theme === 'light' ? light : dark;
+  }, [theme]);
+  const isLight = theme === 'light';
+
   const pageStyle: React.CSSProperties = {
     display: 'flex',
     flexDirection: 'column',
@@ -2108,8 +2442,8 @@ useEffect(() => {
   const inputStyle: React.CSSProperties = {
     padding: '8px 10px',
     borderRadius: 10,
-    border: '1px solid rgba(127,127,127,0.28)',
-    background: 'transparent',
+    border: `1px solid ${themeVars.border}`,
+    background: themeVars.inputBg,
     color: 'inherit',
     outline: 'none',
   };
@@ -2117,8 +2451,8 @@ useEffect(() => {
   const buttonStyle: React.CSSProperties = {
     padding: '8px 12px',
     borderRadius: 10,
-    border: '1px solid rgba(127,127,127,0.28)',
-    background: 'rgba(127,127,127,0.08)',
+    border: `1px solid ${themeVars.border}`,
+    background: themeVars.panelBg2,
     color: 'inherit',
     cursor: 'pointer',
     fontWeight: 600,
@@ -2128,10 +2462,10 @@ useEffect(() => {
     maxWidth: '100%',
     width: '100%',
     borderRadius: 14,
-    border: '1px solid rgba(255,255,255,0.075)',
+    border: `1px solid ${themeVars.borderSoft}`,
     outline: 'none',
-    background: 'rgba(255,255,255,0.03)',
-    boxShadow: '0 8px 22px rgba(0,0,0,0.20)',
+    background: themeVars.panelBg2,
+    boxShadow: themeVars.shadow1,
     backdropFilter: 'blur(8px)',
     WebkitBackdropFilter: 'blur(8px)',
     transition:
@@ -2140,13 +2474,13 @@ useEffect(() => {
 
   const cardHover: React.CSSProperties = {
     transform: 'translateY(-2px)',
-    boxShadow: '0 14px 34px rgba(0,0,0,0.28)',
-    background: 'rgba(255,255,255,0.045)',
+    boxShadow: themeVars.shadow2,
+    background: themeVars.panelBg3,
   };
 
   const cardActive: React.CSSProperties = {
     transform: 'translateY(-1px) scale(0.998)',
-    boxShadow: '0 12px 28px rgba(0,0,0,0.26)',
+    boxShadow: themeVars.shadow2,
   };
 
   const cardSelected: React.CSSProperties = {};
@@ -2157,15 +2491,15 @@ useEffect(() => {
     gap: 6,
     padding: '4px 8px',
     borderRadius: 999,
-    border: '1px solid rgba(255,255,255,0.10)',
-    background: 'rgba(255,255,255,0.04)',
-    color: 'rgba(255,255,255,0.82)',
+    border: `1px solid ${themeVars.border}`,
+    background: themeVars.panelBg3,
+    color: themeVars.appText,
   };
   const chipMuted: React.CSSProperties = {
     ...chip,
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    color: 'rgba(255,255,255,0.72)',
+    background: themeVars.panelBg2,
+    border: `1px solid ${themeVars.borderSoft}`,
+    color: themeVars.muted,
   };
   const statusChipBase: React.CSSProperties = {
     display: 'inline-flex',
@@ -2173,9 +2507,9 @@ useEffect(() => {
     gap: 6,
     padding: '6px 10px',
     borderRadius: 999,
-    border: '1px solid rgba(255,255,255,0.12)',
-    background: 'rgba(255,255,255,0.03)',
-    color: 'rgba(255,255,255,0.86)',
+    border: `1px solid ${themeVars.border}`,
+    background: themeVars.panelBg2,
+    color: themeVars.appText,
     fontSize: 12,
     fontWeight: 700,
     cursor: 'pointer',
@@ -2188,15 +2522,15 @@ useEffect(() => {
     overflow: 'hidden',
     display: 'grid',
     gridTemplateColumns: '240px minmax(0, 1fr)',
-    background: 'transparent',
-    color: 'inherit',
+    background: themeVars.appBg,
+    color: themeVars.appText,
     fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif',
   };
 
   const sidebarStyle: React.CSSProperties = {
     padding: 14,
-    borderRight: '1px solid rgba(255,255,255,0.07)',
-    background: 'rgba(255,255,255,0.02)',
+    borderRight: `1px solid ${themeVars.divider}`,
+    background: themeVars.panelBg,
     backdropFilter: 'blur(10px)',
     WebkitBackdropFilter: 'blur(10px)',
     display: 'flex',
@@ -2210,8 +2544,8 @@ useEffect(() => {
     width: '100%',
     padding: '10px 12px',
     borderRadius: 12,
-    border: `1px solid ${active ? 'rgba(120,200,255,0.35)' : 'rgba(255,255,255,0.10)'}`,
-    background: active ? 'rgba(120,200,255,0.12)' : 'rgba(255,255,255,0.03)',
+    border: `1px solid ${active ? 'rgba(120,200,255,0.35)' : themeVars.border}`,
+    background: active ? 'rgba(120,200,255,0.12)' : themeVars.panelBg2,
     color: 'inherit',
     cursor: 'pointer',
     fontWeight: 800,
@@ -2267,6 +2601,8 @@ useEffect(() => {
     fontWeight: 950,
     letterSpacing: -0.2,
     lineHeight: 1.05,
+    color: themeVars.appText,
+    opacity: 0.96,
   };
 
   const prdH2Style: React.CSSProperties = {
@@ -2275,6 +2611,8 @@ useEffect(() => {
     fontWeight: 900,
     letterSpacing: 0.1,
     lineHeight: 1.15,
+    color: themeVars.appText,
+    opacity: 0.92,
   };
 
   const prdPencilBtnStyle: React.CSSProperties = {
@@ -2284,17 +2622,26 @@ useEffect(() => {
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
-    border: '1px solid rgba(255,255,255,0.10)',
-    background: 'rgba(255,255,255,0.03)',
-    color: 'rgba(255,255,255,0.78)',
+    border: `1px solid ${themeVars.borderSoft}`,
+    background: themeVars.panelBg2,
+    color: themeVars.muted,
     cursor: 'pointer',
     padding: 0,
     lineHeight: 1,
     fontSize: 13,
   };
+  const prdToolBtn: React.CSSProperties = {
+    padding: '6px 9px',
+    borderRadius: 12,
+    border: `1px solid ${themeVars.border}`,
+    background: themeVars.panelBg2,
+    color: 'inherit',
+    fontWeight: 900,
+    fontSize: 12,
+  };
 
   return (
-    <div style={shellStyle}>
+    <div style={{ ...shellStyle, ['--prdLink' as any]: isLight ? 'rgba(30,120,255,0.92)' : 'rgba(120,200,255,0.95)' }}>
       <aside style={sidebarStyle}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: 0.2 }}>Workbench</div>
@@ -2316,7 +2663,7 @@ useEffect(() => {
           ))}
         </div>
 
-        <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
+        <div style={{ height: 1, background: themeVars.divider, margin: '6px 0' }} />
 
         <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 12, opacity: 0.85 }}>
           <input
@@ -2328,6 +2675,28 @@ useEffect(() => {
         </label>
 
         <div style={{ flex: 1 }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Theme</div>
+          <button
+            type="button"
+            onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+            style={{
+              padding: '8px 10px',
+              borderRadius: 12,
+              border: `1px solid ${themeVars.border}`,
+              background: themeVars.panelBg2,
+              color: 'inherit',
+              cursor: 'pointer',
+              fontWeight: 900,
+              fontSize: 12,
+              letterSpacing: 0.15,
+            }}
+            title="Toggle dark/light"
+          >
+            {theme === 'dark' ? 'Dark' : 'Light'}
+          </button>
+        </div>
 
         <div style={{ fontSize: 11, opacity: 0.55, lineHeight: 1.35 }}>
           Tip: You can deep-link sections with hashes like <span style={{ opacity: 0.9 }}>#prd</span>.
@@ -2344,8 +2713,18 @@ useEffect(() => {
         >
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
             <div>
-              <div style={{ opacity: 0.95, fontWeight: 950, fontSize: 26, letterSpacing: 0.1 }}>PRD</div>
-              <div style={{ marginTop: 6, opacity: 0.62, fontSize: 12, fontWeight: 700 }}>
+              <div
+                style={{
+                  opacity: 0.95,
+                  fontWeight: 950,
+                  fontSize: 26,
+                  letterSpacing: 0.1,
+                  color: themeVars.appText,
+                }}
+              >
+                PRD
+              </div>
+              <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: themeVars.muted }}>
                 {prdMode === 'editTemplate' ? 'Template edit mode • autosaved locally' : 'View mode'}
               </div>
             </div>
@@ -2363,9 +2742,9 @@ useEffect(() => {
                 style={{
                   padding: '8px 12px',
                   borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.12)',
+                  border: `1px solid ${themeVars.border}`,
                   background:
-                    prdMode === 'editTemplate' ? 'rgba(120,200,255,0.12)' : 'rgba(255,255,255,0.03)',
+                    prdMode === 'editTemplate' ? 'rgba(120,200,255,0.12)' : themeVars.panelBg2,
                   color: 'inherit',
                   cursor: 'pointer',
                   fontWeight: 800,
@@ -2381,8 +2760,8 @@ useEffect(() => {
                 style={{
                   padding: '8px 12px',
                   borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  background: 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.panelBg2,
                   color: 'inherit',
                   cursor: 'pointer',
                   fontWeight: 750,
@@ -2413,7 +2792,7 @@ useEffect(() => {
                 columnWidth: PRD_COL_W,
                 columnGap: PRD_COL_GAP,
                 columnFill: 'auto',
-                columnRule: '1px solid rgba(255,255,255,0.04)',
+                columnRule: `1px solid ${isLight ? 'rgba(10,16,24,0.14)' : themeVars.divider}`,
                 paddingRight: 12,
                 paddingBottom: 8,
                 boxSizing: 'border-box',
@@ -2432,9 +2811,9 @@ useEffect(() => {
                       marginBottom: 12,
                       breakInside: 'avoid',
                       borderRadius: 16,
-                      border: '1px solid rgba(255,255,255,0.08)',
-                      background: 'rgba(255,255,255,0.03)',
-                      boxShadow: '0 8px 20px rgba(0,0,0,0.14)',
+                      border: `1px solid ${themeVars.border}`,
+                      background: themeVars.panelBg2,
+                      boxShadow: themeVars.shadow1,
                       padding: 12,
                     }}
                   >
@@ -2443,18 +2822,18 @@ useEffect(() => {
                         value={b.label}
                         onChange={(e) => renamePrdBlock(b.id, e.target.value)}
                         onBlur={(e) => renamePrdBlock(b.id, e.target.value.trim() || b.label)}
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          padding: '8px 10px',
-                          borderRadius: 12,
-                          border: '1px solid rgba(255,255,255,0.10)',
-                          background: 'rgba(0,0,0,0.14)',
-                          color: 'inherit',
-                          outline: 'none',
-                          fontWeight: 850,
-                          letterSpacing: 0.15,
-                        }}
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            padding: '8px 10px',
+                            borderRadius: 12,
+                            border: `1px solid ${themeVars.border}`,
+                            background: themeVars.inputBg,
+                            color: 'inherit',
+                            outline: 'none',
+                            fontWeight: 850,
+                            letterSpacing: 0.15,
+                          }}
                       />
 
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -2468,8 +2847,8 @@ useEffect(() => {
                           style={{
                             padding: '7px 10px',
                             borderRadius: 12,
-                            border: '1px solid rgba(255,255,255,0.10)',
-                            background: 'rgba(255,255,255,0.03)',
+                            border: `1px solid ${themeVars.border}`,
+                            background: themeVars.panelBg2,
                             color: 'inherit',
                             cursor: 'pointer',
                             fontWeight: 900,
@@ -2488,8 +2867,8 @@ useEffect(() => {
                           style={{
                             padding: '7px 10px',
                             borderRadius: 12,
-                            border: '1px solid rgba(255,255,255,0.10)',
-                            background: 'rgba(255,255,255,0.03)',
+                            border: `1px solid ${themeVars.border}`,
+                            background: themeVars.panelBg2,
                             color: 'inherit',
                             cursor: 'pointer',
                             fontWeight: 900,
@@ -2504,7 +2883,7 @@ useEffect(() => {
                           style={{
                             padding: '7px 10px',
                             borderRadius: 12,
-                            border: '1px solid rgba(255,255,255,0.12)',
+                            border: `1px solid ${themeVars.border}`,
                             background: 'rgba(120,200,255,0.10)',
                             color: 'inherit',
                             cursor: 'pointer',
@@ -2520,7 +2899,7 @@ useEffect(() => {
                           style={{
                             padding: '7px 10px',
                             borderRadius: 12,
-                            border: '1px solid rgba(255,255,255,0.10)',
+                            border: `1px solid ${themeVars.border}`,
                             background: 'rgba(255,155,155,0.08)',
                             color: 'rgba(255,210,210,0.95)',
                             cursor: 'pointer',
@@ -2540,12 +2919,15 @@ useEffect(() => {
                         className="prd-toolbar"
                         onCmd={prdCmd}
                         onLink={prdLink}
+                        toolBtnStyle={prdToolBtn}
+                        themeVars={themeVars}
                       />
 
                       <InlineRichField
                         blockId={b.id}
                         html={prdToHtml(b.value)}
                         onChangeHtml={(nextHtml) => updatePrdBlock(b.id, nextHtml)}
+                        themeVars={themeVars}
                         onFocusBlock={(blockId, el) => {
                           prdActiveRef.current = el;
                           setPrdFocusId(blockId);
@@ -2632,7 +3014,13 @@ useEffect(() => {
                       ) : null}
                     </>
 
-                    <div style={{ marginTop: 16, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+                    <div
+                      style={{
+                        marginTop: 16,
+                        height: 1,
+                        background: isLight ? 'rgba(10,16,24,0.16)' : themeVars.divider,
+                      }}
+                    />
                   </div>
                 ) : (
                   <div
@@ -2645,9 +3033,9 @@ useEffect(() => {
                       marginBottom: 12,
                       breakInside: 'avoid',
                       borderRadius: 16,
-                      border: '1px solid rgba(255,255,255,0.08)',
-                      background: 'rgba(255,255,255,0.03)',
-                      boxShadow: '0 8px 20px rgba(0,0,0,0.14)',
+                      border: `1px solid ${themeVars.border}`,
+                      background: themeVars.panelBg2,
+                      boxShadow: themeVars.shadow1,
                       padding: 12,
                     }}
                   >
@@ -2703,12 +3091,15 @@ useEffect(() => {
                       className="prd-toolbar"
                       onCmd={prdCmd}
                       onLink={prdLink}
+                      toolBtnStyle={prdToolBtn}
+                      themeVars={themeVars}
                     />
 
                     <InlineRichField
                       blockId={b.id}
                       html={prdToHtml(b.value)}
                       onChangeHtml={(nextHtml) => updatePrdBlock(b.id, nextHtml)}
+                      themeVars={themeVars}
                       onFocusBlock={(blockId, el) => {
                         prdActiveRef.current = el;
                         setPrdFocusId(blockId);
@@ -2952,10 +3343,10 @@ useEffect(() => {
                           width: 72,
                           minWidth: 72,
                           borderRadius: 16,
-                          border: '1px dashed rgba(255,255,255,0.14)',
-                          background: 'rgba(255,255,255,0.02)',
-                          color: 'rgba(255,255,255,0.82)',
-                          boxShadow: '0 10px 26px rgba(0,0,0,0.12)',
+                          border: `1px dashed ${themeVars.borderSoft}`,
+                          background: themeVars.panelBg,
+                          color: themeVars.appText,
+                          boxShadow: themeVars.shadow1,
                           cursor: 'pointer',
                           display: 'flex',
                           flexDirection: 'column',
@@ -3035,10 +3426,20 @@ useEffect(() => {
           style={sectionStyle}
         >
           <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
-            <div style={{ opacity: 0.8, fontWeight: 850, fontSize: 18 }}>Phases</div>
-            <div style={{ marginTop: 8, opacity: 0.65, fontSize: 13 }}>
-              Placeholder. We’ll add the “from space” phase overview after PRD.
-            </div>
+            <PhaseFromSpaceView
+              doc={doc}
+              onShowAll={() => {
+                setPhaseFilter('all');
+                scrollToSection('roadmap');
+              }}
+              onOpenPhase={(phaseId) => {
+                setPhaseFilter(phaseId);
+                scrollToSection('roadmap');
+              }}
+              themeVars={themeVars}
+              statusMeta={STATUS_META}
+              isLight={isLight}
+            />
           </div>
         </section>
       </main>
@@ -3049,7 +3450,7 @@ useEffect(() => {
             position: 'fixed',
             inset: 0,
             zIndex: 10020,
-            background: 'rgba(0,0,0,0.02)',
+            background: themeVars.overlay,
           }}
         >
           <div
@@ -3058,13 +3459,13 @@ useEffect(() => {
               position: 'absolute',
               top: statusPopover.y,
               left: statusPopover.x,
-              background: 'rgba(24,24,24,0.94)',
-              color: '#f5f5f5',
+              background: themeVars.panelBgStrong,
+              color: themeVars.appText,
               borderRadius: 10,
               padding: 8,
               minWidth: 160,
-              border: '1px solid rgba(255,255,255,0.08)',
-              boxShadow: '0 14px 32px rgba(0,0,0,0.38)',
+              border: `1px solid ${themeVars.border}`,
+              boxShadow: themeVars.shadowPop,
               display: 'grid',
               gap: 6,
             }}
@@ -3097,7 +3498,7 @@ useEffect(() => {
       {statusFilterMenu.open ? (
         <div
           onMouseDown={closeStatusFilterMenu}
-          style={{ position: 'fixed', inset: 0, zIndex: 10050, background: 'transparent' }}
+          style={{ position: 'fixed', inset: 0, zIndex: 10050, background: themeVars.overlay }}
         >
           <div
             onMouseDown={(e) => e.stopPropagation()}
@@ -3105,13 +3506,13 @@ useEffect(() => {
               position: 'fixed',
               left: statusFilterMenu.x,
               top: statusFilterMenu.y,
-              background: 'rgba(24,24,24,0.94)',
-              color: '#f5f5f5',
+              background: themeVars.panelBgStrong,
+              color: themeVars.appText,
               borderRadius: 12,
               padding: 10,
               minWidth: 220,
-              border: '1px solid rgba(255,255,255,0.08)',
-              boxShadow: '0 14px 32px rgba(0,0,0,0.38)',
+              border: `1px solid ${themeVars.border}`,
+              boxShadow: themeVars.shadowPop,
               display: 'grid',
               gap: 8,
             }}
@@ -3131,14 +3532,14 @@ useEffect(() => {
                   ...statusChipBase,
                   justifyContent: 'center',
                   flex: 1,
-                  background: 'rgba(255,255,255,0.02)',
+                  background: themeVars.panelBg2,
                 }}
               >
                 None
               </button>
             </div>
 
-            <div style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
+            <div style={{ height: 1, background: themeVars.divider }} />
 
             {ALL_STATUSES.map((s) => {
               const active = statusFilter.has(s);
@@ -3155,16 +3556,16 @@ useEffect(() => {
                       return next;
                     })
                   }
-                  style={{
-                    textAlign: 'left',
-                    padding: '10px 10px',
-                    borderRadius: 10,
-                    border: `1px solid ${active ? meta.chipBorder : 'rgba(255,255,255,0.10)'}`,
-                    background: active ? meta.chipBg : 'rgba(255,255,255,0.02)',
-                    color: active ? meta.chipText : 'rgba(255,255,255,0.82)',
-                    cursor: 'pointer',
-                    fontWeight: 750,
-                    display: 'flex',
+                style={{
+                  textAlign: 'left',
+                  padding: '10px 10px',
+                  borderRadius: 10,
+                  border: `1px solid ${active ? meta.chipBorder : themeVars.border}`,
+                  background: active ? meta.chipBg : themeVars.panelBg2,
+                  color: active ? meta.chipText : themeVars.appText,
+                  cursor: 'pointer',
+                  fontWeight: 750,
+                  display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     gap: 10,
@@ -3185,13 +3586,13 @@ useEffect(() => {
             left: tagPopover.x,
             top: tagPopover.y,
             zIndex: 10040,
-            background: 'rgba(24,24,24,0.94)',
-            color: '#f5f5f5',
+            background: themeVars.panelBgStrong,
+            color: themeVars.appText,
             borderRadius: 10,
             padding: '8px 10px',
             minWidth: 160,
-            border: '1px solid rgba(255,255,255,0.08)',
-            boxShadow: '0 14px 32px rgba(0,0,0,0.38)',
+            border: `1px solid ${themeVars.border}`,
+            boxShadow: themeVars.shadowPop,
             display: 'grid',
             gap: 6,
             pointerEvents: 'none',
@@ -3210,7 +3611,7 @@ useEffect(() => {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.05)',
+            background: themeVars.overlay,
           }}
         >
           <div
@@ -3219,13 +3620,13 @@ useEffect(() => {
               position: 'absolute',
               top: ctxMenu.y,
               left: ctxMenu.x,
-              background: 'rgba(24,24,24,0.92)',
-              color: '#f5f5f5',
+              background: themeVars.panelBgStrong,
+              color: themeVars.appText,
               borderRadius: 10,
               padding: 8,
               minWidth: 180,
-              border: '1px solid rgba(255,255,255,0.1)',
-              boxShadow: '0 12px 28px rgba(0,0,0,0.35)',
+              border: `1px solid ${themeVars.border}`,
+              boxShadow: themeVars.shadowPop,
               display: 'grid',
               gap: 4,
             }}
@@ -3342,7 +3743,7 @@ useEffect(() => {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.35)',
+            background: themeVars.overlay,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -3353,14 +3754,14 @@ useEffect(() => {
           <div
             onMouseDown={(e) => e.stopPropagation()}
             style={{
-              background: 'rgba(24,24,24,0.94)',
-              color: '#f5f5f5',
+              background: themeVars.panelBgStrong,
+              color: themeVars.appText,
               borderRadius: 12,
               padding: 20,
               minWidth: 380,
               maxWidth: 'min(560px, 100%)',
-              boxShadow: '0 18px 42px rgba(0,0,0,0.45)',
-              border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: themeVars.shadow3,
+              border: `1px solid ${themeVars.border}`,
               display: 'grid',
               gap: 14,
             }}
@@ -3382,8 +3783,8 @@ useEffect(() => {
                 style={{
                   padding: '10px 12px',
                   borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  background: 'rgba(0,0,0,0.18)',
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.inputBg2,
                   color: 'inherit',
                   outline: 'none',
                   fontSize: 15,
@@ -3394,7 +3795,7 @@ useEffect(() => {
                   e.currentTarget.style.boxShadow = '0 0 0 6px rgba(120,200,255,0.12)';
                 }}
                 onBlur={(e) => {
-                  e.currentTarget.style.border = '1px solid rgba(255,255,255,0.10)';
+                  e.currentTarget.style.border = `1px solid ${themeVars.border}`;
                   e.currentTarget.style.boxShadow = '0 0 0 0 rgba(120,200,255,0.5)';
                 }}
               />
@@ -3409,8 +3810,8 @@ useEffect(() => {
                 style={{
                   padding: '10px 12px',
                   borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  background: 'rgba(0,0,0,0.18)',
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.inputBg2,
                   color: 'inherit',
                   outline: 'none',
                   resize: 'vertical',
@@ -3423,7 +3824,7 @@ useEffect(() => {
                   e.currentTarget.style.boxShadow = '0 0 0 6px rgba(120,200,255,0.12)';
                 }}
                 onBlur={(e) => {
-                  e.currentTarget.style.border = '1px solid rgba(255,255,255,0.10)';
+                  e.currentTarget.style.border = `1px solid ${themeVars.border}`;
                   e.currentTarget.style.boxShadow = '0 0 0 0 rgba(120,200,255,0.5)';
                 }}
               />
@@ -3437,8 +3838,8 @@ useEffect(() => {
                 style={{
                   padding: '10px 12px',
                   borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  background: 'rgba(0,0,0,0.18)',
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.inputBg2,
                   color: 'inherit',
                   outline: 'none',
                   fontSize: 14,
@@ -3449,7 +3850,7 @@ useEffect(() => {
                   e.currentTarget.style.boxShadow = '0 0 0 6px rgba(120,200,255,0.12)';
                 }}
                 onBlur={(e) => {
-                  e.currentTarget.style.border = '1px solid rgba(255,255,255,0.10)';
+                  e.currentTarget.style.border = `1px solid ${themeVars.border}`;
                   e.currentTarget.style.boxShadow = '0 0 0 0 rgba(120,200,255,0.5)';
                 }}
               />
@@ -3464,8 +3865,8 @@ useEffect(() => {
                   style={{
                     padding: '10px 12px',
                     borderRadius: 12,
-                    border: '1px solid rgba(255,255,255,0.10)',
-                    background: 'rgba(0,0,0,0.18)',
+                    border: `1px solid ${themeVars.border}`,
+                    background: themeVars.inputBg2,
                     color: 'inherit',
                     outline: 'none',
                     fontSize: 14,
@@ -3495,9 +3896,9 @@ useEffect(() => {
                         style={{
                           padding: '8px 10px',
                           borderRadius: 12,
-                          border: active ? `1px solid ${meta.chipBorder}` : '1px solid rgba(255,255,255,0.12)',
-                          background: active ? meta.chipBg : 'rgba(255,255,255,0.03)',
-                          color: active ? meta.chipText : 'rgba(255,255,255,0.8)',
+                          border: active ? `1px solid ${meta.chipBorder}` : `1px solid ${themeVars.border}`,
+                          background: active ? meta.chipBg : themeVars.panelBg2,
+                          color: active ? meta.chipText : themeVars.appText,
                           fontWeight: 700,
                           fontSize: 12,
                           cursor: 'pointer',
@@ -3518,8 +3919,8 @@ useEffect(() => {
                 style={{
                   padding: '8px 12px',
                   borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  background: 'rgba(255,255,255,0.05)',
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.panelBg2,
                   color: 'inherit',
                   cursor: 'pointer',
                   fontWeight: 600,
@@ -3533,7 +3934,7 @@ useEffect(() => {
                 style={{
                   padding: '8px 12px',
                   borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.18)',
+                  border: `1px solid ${themeVars.border}`,
                   background: 'linear-gradient(120deg, rgba(120,200,255,0.6), rgba(120,160,255,0.7))',
                   color: '#0b111a',
                   cursor: 'pointer',
@@ -3552,7 +3953,7 @@ useEffect(() => {
         .prd-rich p { margin: 6px 0; }
         .prd-rich ul, .prd-rich ol { margin: 6px 0; padding-left: 22px; }
         .prd-rich li { margin: 2px 0; }
-        .prd-rich a { color: rgba(120,200,255,0.95); text-decoration: underline; }
+        .prd-rich a { color: var(--prdLink); text-decoration: underline; }
         .prd-toolbar::-webkit-scrollbar { display: none; }
       `}</style>
     </div>
