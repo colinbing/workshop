@@ -18,7 +18,7 @@ import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@d
 import { CSS } from '@dnd-kit/utilities';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Feature, FeatureStatus, Phase, WorkbenchDoc } from './types';
-import { loadDoc, saveDoc } from './storage';
+import { loadDoc } from './storage';
 
 function uid(prefix = 'id') {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
@@ -263,6 +263,81 @@ type PrdDoc = {
   blocks: PrdBlock[];
 };
 
+type ProjectData = {
+  id: string;
+  doc: WorkbenchDoc;
+  prd: PrdDoc;
+  lastEdited: number;
+  colorId?: string;
+};
+
+type ProjectColor = {
+  id: string;
+  label: string;
+  swatch: string;
+  bg: string;
+  border: string;
+};
+
+const PROJECT_COLORS: ProjectColor[] = [
+  {
+    id: 'red',
+    label: 'Red',
+    swatch: '#ff6b6b',
+    bg: 'rgba(255,107,107,0.16)',
+    border: 'rgba(255,107,107,0.55)',
+  },
+  {
+    id: 'orange',
+    label: 'Orange',
+    swatch: '#ff9f43',
+    bg: 'rgba(255,159,67,0.18)',
+    border: 'rgba(255,159,67,0.55)',
+  },
+  {
+    id: 'yellow',
+    label: 'Yellow',
+    swatch: '#ffd166',
+    bg: 'rgba(255,209,102,0.18)',
+    border: 'rgba(255,209,102,0.55)',
+  },
+  {
+    id: 'green',
+    label: 'Green',
+    swatch: '#2ecc71',
+    bg: 'rgba(46,204,113,0.18)',
+    border: 'rgba(46,204,113,0.55)',
+  },
+  {
+    id: 'teal',
+    label: 'Teal',
+    swatch: '#20c997',
+    bg: 'rgba(32,201,151,0.18)',
+    border: 'rgba(32,201,151,0.55)',
+  },
+  {
+    id: 'blue',
+    label: 'Blue',
+    swatch: '#4d9fff',
+    bg: 'rgba(77,159,255,0.18)',
+    border: 'rgba(77,159,255,0.55)',
+  },
+  {
+    id: 'purple',
+    label: 'Purple',
+    swatch: '#9b7bff',
+    bg: 'rgba(155,123,255,0.18)',
+    border: 'rgba(155,123,255,0.55)',
+  },
+  {
+    id: 'pink',
+    label: 'Pink',
+    swatch: '#ff77c8',
+    bg: 'rgba(255,119,200,0.18)',
+    border: 'rgba(255,119,200,0.55)',
+  },
+];
+
 function seedPrd(): PrdDoc {
   const mk = (type: PrdBlockType, label: string, order: number, value = ''): PrdBlock => ({
     id: uid('prd'),
@@ -328,6 +403,65 @@ function seedPrd(): PrdDoc {
   };
 }
 
+const PROJECTS_KEY = 'workbench_projects_v1';
+
+function getPrdTitle(prd: PrdDoc) {
+  const titleBlock = prd.blocks.find((b) => b.type === 'title');
+  return titleBlock?.value?.trim() ?? '';
+}
+
+function setPrdTitle(prd: PrdDoc, title: string): PrdDoc {
+  const nextTitle = title.trim();
+  if (!nextTitle) return prd;
+  return {
+    ...prd,
+    blocks: prd.blocks.map((b) => (b.type === 'title' ? { ...b, value: nextTitle } : b)),
+  };
+}
+
+function loadProjects(): { projects: ProjectData[]; activeProjectId: string } {
+  try {
+    const raw = localStorage.getItem(PROJECTS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as {
+        version?: number;
+        projects?: ProjectData[];
+        activeProjectId?: string;
+      };
+      if (parsed && Array.isArray(parsed.projects) && parsed.projects.length) {
+        const activeProjectId =
+          parsed.projects.find((p) => p.id === parsed.activeProjectId)?.id ?? parsed.projects[0].id;
+        return { projects: parsed.projects, activeProjectId };
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const baseDoc = loadDoc() ?? seedDoc();
+  const basePrd = loadPrd() ?? seedPrd();
+  const title = getPrdTitle(basePrd);
+  const nextDoc = title ? { ...baseDoc, title } : baseDoc;
+  const seedProject: ProjectData = {
+    id: uid('project'),
+    doc: nextDoc,
+    prd: basePrd,
+    lastEdited: now(),
+  };
+  return { projects: [seedProject], activeProjectId: seedProject.id };
+}
+
+function saveProjects(projects: ProjectData[], activeProjectId: string) {
+  try {
+    localStorage.setItem(
+      PROJECTS_KEY,
+      JSON.stringify({ version: 1, projects, activeProjectId })
+    );
+  } catch {
+    // ignore
+  }
+}
+
 function loadPrd(): PrdDoc | null {
   try {
     const raw = localStorage.getItem('workbench_prd_v1');
@@ -337,14 +471,6 @@ function loadPrd(): PrdDoc | null {
     return parsed;
   } catch {
     return null;
-  }
-}
-
-function savePrd(prd: PrdDoc) {
-  try {
-    localStorage.setItem('workbench_prd_v1', JSON.stringify(prd));
-  } catch {
-    // ignore
   }
 }
 
@@ -942,20 +1068,60 @@ function PhaseFromSpaceView({
 }
 
 export default function App() {
-  const [userDoc, setUserDoc] = useState<WorkbenchDoc>(() => loadDoc() ?? seedDoc());
-  const [userPrd, setUserPrd] = useState<PrdDoc>(() => loadPrd() ?? seedPrd());
+  const initialProjects = useMemo(() => loadProjects(), []);
+  const [projects, setProjects] = useState<ProjectData[]>(() => initialProjects.projects);
+  const [activeProjectId, setActiveProjectId] = useState<string>(
+    () => initialProjects.activeProjectId
+  );
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [demoDoc, setDemoDoc] = useState<WorkbenchDoc>(() => seedDoc());
   const [demoPrd, setDemoPrd] = useState<PrdDoc>(() => seedPrd());
-  const doc = isDemoMode ? demoDoc : userDoc;
-  const setDoc = isDemoMode ? setDemoDoc : setUserDoc;
-  const prd = isDemoMode ? demoPrd : userPrd;
-  const setPrd = isDemoMode ? setDemoPrd : setUserPrd;
+  const activeProject = useMemo(
+    () => projects.find((p) => p.id === activeProjectId) ?? projects[0],
+    [projects, activeProjectId]
+  );
+  const doc = isDemoMode ? demoDoc : activeProject?.doc ?? seedDoc();
+  const prd = isDemoMode ? demoPrd : activeProject?.prd ?? seedPrd();
+  const setDoc = isDemoMode
+    ? setDemoDoc
+    : (next: React.SetStateAction<WorkbenchDoc>) => {
+        setProjects((prev) =>
+          prev.map((p) => {
+            if (p.id !== activeProjectId) return p;
+            const nextDoc = typeof next === 'function' ? next(p.doc) : next;
+            return { ...p, doc: nextDoc, lastEdited: now() };
+          })
+        );
+      };
+  const setPrd = isDemoMode
+    ? setDemoPrd
+    : (next: React.SetStateAction<PrdDoc>) => {
+        setProjects((prev) =>
+          prev.map((p) => {
+            if (p.id !== activeProjectId) return p;
+            const nextPrd = typeof next === 'function' ? next(p.prd) : next;
+            const nextTitle = getPrdTitle(nextPrd);
+            const nextDoc =
+              nextTitle && nextTitle !== p.doc.title ? { ...p.doc, title: nextTitle } : p.doc;
+            return { ...p, prd: nextPrd, doc: nextDoc, lastEdited: now() };
+          })
+        );
+      };
   const editingDisabled = isDemoMode;
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const [paletteIndex, setPaletteIndex] = useState(0);
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [projectColorPicker, setProjectColorPicker] = useState<{
+    open: boolean;
+    projectId: string | null;
+  }>({ open: false, projectId: null });
+  const [deleteHoldProgress, setDeleteHoldProgress] = useState(0);
+  const deleteHoldStartRef = useRef<number | null>(null);
+  const deleteHoldRafRef = useRef<number | null>(null);
+  const deleteHoldTimeoutRef = useRef<number | null>(null);
   const suppressNewFeatureClickRef = useRef(false);
 
   useEffect(() => {
@@ -2124,11 +2290,6 @@ export default function App() {
   );
   const editorTitleRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    if (isDemoMode) return;
-    saveDoc(userDoc);
-  }, [userDoc, isDemoMode]);
-
   useLayoutEffect(() => {
     const el = boardRef.current;
     if (!el) return;
@@ -3061,9 +3222,15 @@ useEffect(() => {
   }, [ctxMenu.open, ctxMenu.target.kind, ctxMenu.x, ctxMenu.y]);
 
   useEffect(() => {
+    if (!projectColorPicker.open) return;
+    resetDeleteHold();
+  }, [projectColorPicker.open, projectColorPicker.projectId]);
+
+  useEffect(() => {
     if (isDemoMode) return;
-    savePrd(userPrd);
-  }, [userPrd, isDemoMode]);
+    if (!projects.length) return;
+    saveProjects(projects, activeProjectId);
+  }, [projects, activeProjectId, isDemoMode]);
 
   useEffect(() => {
     if (!prdInlineEditId) return;
@@ -3481,6 +3648,62 @@ useEffect(() => {
     fontWeight: 900,
     fontSize: 12,
   };
+  const formatLastEdited = (ts: number) => {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+  const DELETE_HOLD_MS = 1600;
+  const resetDeleteHold = () => {
+    if (deleteHoldRafRef.current != null) cancelAnimationFrame(deleteHoldRafRef.current);
+    if (deleteHoldTimeoutRef.current != null) window.clearTimeout(deleteHoldTimeoutRef.current);
+    deleteHoldRafRef.current = null;
+    deleteHoldTimeoutRef.current = null;
+    deleteHoldStartRef.current = null;
+    setDeleteHoldProgress(0);
+  };
+  const startDeleteHold = (projectId: string) => {
+    if (editingDisabled) return;
+    if (projects.length <= 1) return;
+    resetDeleteHold();
+    deleteHoldStartRef.current = performance.now();
+
+    const tick = (now: number) => {
+      if (deleteHoldStartRef.current == null) return;
+      const progress = Math.min((now - deleteHoldStartRef.current) / DELETE_HOLD_MS, 1);
+      setDeleteHoldProgress(progress);
+      if (progress < 1) deleteHoldRafRef.current = requestAnimationFrame(tick);
+    };
+    deleteHoldRafRef.current = requestAnimationFrame(tick);
+    deleteHoldTimeoutRef.current = window.setTimeout(() => {
+      setProjects((prev) => {
+        if (prev.length <= 1) return prev;
+        const next = prev.filter((p) => p.id !== projectId);
+        if (!next.length) return prev;
+        const nextActive =
+          activeProjectId === projectId ? next[0].id : activeProjectId;
+        setActiveProjectId(nextActive);
+        return next;
+      });
+      closeEditor();
+      closeDetails();
+      closeCtxMenu();
+      closeStatusPopover();
+      closeStatusFilterMenu();
+      closeTagPopover();
+      setSelectedId(null);
+      setPhaseFilter('all');
+      setStatusFilter(new Set(ALL_STATUSES));
+      setTagQuery('');
+      setProjectColorPicker({ open: false, projectId: null });
+      resetDeleteHold();
+    }, DELETE_HOLD_MS);
+  };
+  const cancelDeleteHold = () => {
+    resetDeleteHold();
+  };
   const MENU_MARGIN = 8;
   const ctxMenuWidth = ctxMenuSize.width || 180;
   const ctxMenuHeight = ctxMenuSize.height || 160;
@@ -3526,6 +3749,144 @@ useEffect(() => {
           </div>
         </div>
 
+        <div style={{ fontSize: 11, opacity: 0.6, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+          Projects
+        </div>
+        <div style={{ display: 'grid', gap: 8 }}>
+          {projects.map((project) => {
+            const isActive = project.id === activeProjectId;
+            const projectName = getPrdTitle(project.prd) || project.doc.title || 'Untitled project';
+            const stats = `${project.doc.phases.length} phases • ${project.doc.features.length} features`;
+            const color = PROJECT_COLORS.find((c) => c.id === project.colorId);
+            const baseBg = isActive ? themeVars.panelBg2 : themeVars.panelBg;
+            const borderColor = color ? color.border : isActive ? themeVars.border : themeVars.borderSoft;
+            const background = color ? `linear-gradient(180deg, ${color.bg}, ${baseBg})` : baseBg;
+
+            return (
+              <div
+                key={project.id}
+                role="button"
+                tabIndex={0}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  if (editingDisabled) return;
+                  setProjectColorPicker({ open: true, projectId: project.id });
+                }}
+                onClick={() => {
+                  if (project.id === activeProjectId) return;
+                  closeEditor();
+                  closeDetails();
+                  closeCtxMenu();
+                  closeStatusPopover();
+                  closeStatusFilterMenu();
+                  closeTagPopover();
+                  setSelectedId(null);
+                  setPhaseFilter('all');
+                  setStatusFilter(new Set(ALL_STATUSES));
+                  setTagQuery('');
+                  setActiveProjectId(project.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (project.id === activeProjectId) return;
+                    closeEditor();
+                    closeDetails();
+                    closeCtxMenu();
+                    closeStatusPopover();
+                    closeStatusFilterMenu();
+                    closeTagPopover();
+                    setSelectedId(null);
+                    setPhaseFilter('all');
+                    setStatusFilter(new Set(ALL_STATUSES));
+                    setTagQuery('');
+                    setActiveProjectId(project.id);
+                  }
+                }}
+                style={{
+                  borderRadius: 12,
+                  border: `1px solid ${borderColor}`,
+                  background,
+                  padding: isActive ? 10 : 8,
+                  cursor: 'pointer',
+                  opacity: isActive ? 1 : 0.82,
+                  transition: 'opacity 140ms ease, transform 140ms ease',
+                  transform: isActive ? 'scale(1)' : 'scale(0.985)',
+                  display: 'grid',
+                  gap: 6,
+                }}
+                title={projectName}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontWeight: 900,
+                    fontSize: isActive ? 12 : 11,
+                    letterSpacing: 0.1,
+                    color: themeVars.appText,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {color ? (
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 999,
+                        background: color.swatch,
+                        boxShadow: `0 0 0 2px ${color.bg}`,
+                        flexShrink: 0,
+                      }}
+                    />
+                  ) : null}
+                  {projectName}
+                </div>
+                <div style={{ fontSize: 11, opacity: 0.7 }}>{stats}</div>
+                {isActive ? (
+                  <div style={{ fontSize: 11, opacity: 0.55 }}>
+                    Updated {formatLastEdited(project.lastEdited)}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          {projects.length < 2 ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (editingDisabled) return;
+                setNewProjectName('');
+                setIsProjectModalOpen(true);
+              }}
+              disabled={editingDisabled}
+              style={{
+                padding: '8px 10px',
+                borderRadius: 12,
+                border: `1px dashed ${themeVars.border}`,
+                background: themeVars.panelBg2,
+                color: themeVars.appText,
+                cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                fontWeight: 900,
+                fontSize: 12,
+                opacity: editingDisabled ? 0.5 : 1,
+              }}
+              title={editingDisabled ? 'Demo mode: project creation disabled' : 'Create project'}
+            >
+              + New project
+            </button>
+          ) : null}
+        </div>
+
+        <div style={{ height: 1, background: themeVars.divider, margin: '4px 0' }} />
+
+        <div style={{ fontSize: 11, opacity: 0.6, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+          Sections
+        </div>
         <div style={{ display: 'grid', gap: 8 }}>
           {(['prd', 'roadmap', 'phases'] as DocSection[]).map((key) => (
             <button
@@ -3541,6 +3902,8 @@ useEffect(() => {
             </button>
           ))}
         </div>
+
+        <div style={{ height: 1, background: themeVars.divider, margin: '4px 0' }} />
 
         <button
           type="button"
@@ -4813,6 +5176,279 @@ useEffect(() => {
           </div>
         </div>
       )}
+      {isProjectModalOpen ? (
+        <div
+          onMouseDown={() => setIsProjectModalOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: themeVars.overlay,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10030,
+            padding: 16,
+          }}
+        >
+          <div
+          onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              background: themeVars.panelBgStrong,
+              color: themeVars.appText,
+              borderRadius: 12,
+              padding: 20,
+              minWidth: 340,
+              maxWidth: 'min(520px, 100%)',
+              boxShadow: themeVars.shadow3,
+              border: `1px solid ${themeVars.border}`,
+              display: 'grid',
+              gap: 14,
+            }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 800 }}>Create project</div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <label style={{ fontSize: 13, opacity: 0.8 }}>Project name</label>
+              <input
+                autoFocus
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="New project"
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.inputBg2,
+                  color: 'inherit',
+                  outline: 'none',
+                  fontSize: 14,
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+              <button
+                type="button"
+                onClick={() => setIsProjectModalOpen(false)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.panelBg2,
+                  color: 'inherit',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const trimmed = newProjectName.trim();
+                  if (!trimmed) return;
+                  const seededDoc = seedDoc();
+                  const seededPrd = seedPrd();
+                  const nextDoc = { ...seededDoc, title: trimmed };
+                  const nextPrd = setPrdTitle(seededPrd, trimmed);
+                  const nextProject: ProjectData = {
+                    id: uid('project'),
+                    doc: nextDoc,
+                    prd: nextPrd,
+                    lastEdited: now(),
+                    colorId: undefined,
+                  };
+                  setProjects((prev) => [...prev, nextProject]);
+                  setActiveProjectId(nextProject.id);
+                  closeEditor();
+                  closeDetails();
+                  closeCtxMenu();
+                  closeStatusPopover();
+                  closeStatusFilterMenu();
+                  closeTagPopover();
+                  setSelectedId(null);
+                  setPhaseFilter('all');
+                  setStatusFilter(new Set(ALL_STATUSES));
+                  setTagQuery('');
+                  setIsProjectModalOpen(false);
+                  setNewProjectName('');
+                }}
+                disabled={!newProjectName.trim()}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: `1px solid ${themeVars.border}`,
+                  background: newProjectName.trim()
+                    ? 'linear-gradient(120deg, rgba(120,200,255,0.6), rgba(120,160,255,0.7))'
+                    : themeVars.panelBg2,
+                  color: newProjectName.trim() ? '#ffffff' : themeVars.muted,
+                  cursor: newProjectName.trim() ? 'pointer' : 'not-allowed',
+                  fontWeight: 700,
+                  opacity: newProjectName.trim() ? 1 : 0.7,
+                }}
+              >
+                Create project
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {projectColorPicker.open && projectColorPicker.projectId ? (
+        <div
+          onMouseDown={() => setProjectColorPicker({ open: false, projectId: null })}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: themeVars.overlay,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10030,
+            padding: 16,
+          }}
+        >
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              background: themeVars.panelBgStrong,
+              color: themeVars.appText,
+              borderRadius: 14,
+              padding: 18,
+              minWidth: 320,
+              maxWidth: 'min(520px, 100%)',
+              boxShadow: themeVars.shadow3,
+              border: `1px solid ${themeVars.border}`,
+              display: 'grid',
+              gap: 12,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 16, fontWeight: 900 }}>Project color</div>
+              <button
+                type="button"
+                onClick={() => {
+                  resetDeleteHold();
+                  setProjectColorPicker({ open: false, projectId: null });
+                }}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 999,
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.panelBg2,
+                  color: 'inherit',
+                  cursor: 'pointer',
+                  fontWeight: 800,
+                  fontSize: 11,
+                }}
+              >
+                Done
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: themeVars.muted }}>
+              Pick a color to personalize this project.
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                gap: 10,
+              }}
+            >
+              {PROJECT_COLORS.map((c) => {
+                const isSelected =
+                  projects.find((p) => p.id === projectColorPicker.projectId)?.colorId === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      if (editingDisabled) return;
+                      setProjects((prev) =>
+                        prev.map((p) =>
+                          p.id === projectColorPicker.projectId
+                            ? { ...p, colorId: c.id, lastEdited: now() }
+                            : p
+                        )
+                      );
+                    }}
+                    disabled={editingDisabled}
+                    style={{
+                      padding: '10px 8px',
+                      borderRadius: 12,
+                      border: `1px solid ${isSelected ? c.border : themeVars.borderSoft}`,
+                      background: isSelected ? c.bg : themeVars.panelBg2,
+                      color: themeVars.appText,
+                      cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                      display: 'grid',
+                      gap: 6,
+                      placeItems: 'center',
+                      fontWeight: 800,
+                      fontSize: 11,
+                      opacity: editingDisabled ? 0.6 : 1,
+                      transition: 'transform 120ms ease, border-color 120ms ease, background 120ms ease',
+                      transform: isSelected ? 'translateY(-1px)' : 'translateY(0)',
+                    }}
+                  >
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: 999,
+                        background: c.swatch,
+                        boxShadow: isSelected
+                          ? `0 0 0 3px ${c.bg}, 0 0 0 1px ${c.border}`
+                          : `0 0 0 1px ${themeVars.borderSoft}`,
+                      }}
+                    />
+                    {c.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ height: 1, background: themeVars.divider, marginTop: 2 }} />
+            <div style={{ fontSize: 12, fontWeight: 800, color: themeVars.muted }}>Danger zone</div>
+            <button
+              type="button"
+              onPointerDown={() => startDeleteHold(projectColorPicker.projectId!)}
+              onPointerUp={cancelDeleteHold}
+              onPointerLeave={cancelDeleteHold}
+              onPointerCancel={cancelDeleteHold}
+              disabled={editingDisabled || projects.length <= 1}
+              style={{
+                position: 'relative',
+                overflow: 'hidden',
+                padding: '10px 12px',
+                borderRadius: 12,
+                border: `1px solid rgba(255,99,99,0.5)`,
+                background: 'rgba(255,99,99,0.12)',
+                color: 'rgba(255,210,210,0.95)',
+                cursor: editingDisabled || projects.length <= 1 ? 'not-allowed' : 'pointer',
+                fontWeight: 800,
+                fontSize: 12,
+                opacity: editingDisabled || projects.length <= 1 ? 0.5 : 1,
+              }}
+              title={
+                projects.length <= 1
+                  ? 'Keep at least one project'
+                  : 'Hold to delete this project'
+              }
+            >
+              <div
+                aria-hidden
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: `${Math.round(deleteHoldProgress * 100)}%`,
+                  background: 'rgba(255,99,99,0.28)',
+                  transition: deleteHoldProgress === 0 ? 'none' : 'width 80ms linear',
+                }}
+              />
+              <span style={{ position: 'relative' }}>
+                {projects.length <= 1 ? 'Cannot delete last project' : 'Hold to delete project'}
+              </span>
+            </button>
+          </div>
+        </div>
+      ) : null}
       {statusPopover.open && statusPopover.featureId ? (
         <div
           onClick={() => closeStatusPopover()}
