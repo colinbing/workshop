@@ -766,31 +766,6 @@ const PrdToolbar = memo(function PrdToolbar({
         Clear
       </button>
 
-      <label
-        style={{
-          ...toolBtnStyle,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          cursor: 'pointer',
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ opacity: 0.8 }}>Color</span>
-        <input
-          type="color"
-          defaultValue="#ffffff"
-          onChange={(e) => onCmd('foreColor', e.target.value)}
-          style={{
-            width: 16,
-            height: 16,
-            border: 'none',
-            background: 'transparent',
-            padding: 0,
-            cursor: 'pointer',
-          }}
-        />
-      </label>
     </div>
   );
 });
