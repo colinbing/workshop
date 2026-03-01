@@ -6,7 +6,6 @@ import {
   closestCenter,
   type DragMoveEvent,
   type DragOverEvent,
-  useDraggable,
   useDroppable,
   useSensor,
   useSensors,
@@ -549,6 +548,7 @@ const SNAP_DURATION = 600;
 const SNAP_WHEEL_THRESHOLD = 150;
 const SNAP_WHEEL_IDLE_MS = 260;
 const LANE_SAFE_PAD = 8;
+const MOBILE_BREAKPOINT = 980;
 type DocSection = 'prd' | 'roadmap' | 'phases';
 
 const SECTION_LABELS: Record<DocSection, string> = {
@@ -1121,10 +1121,31 @@ export default function App() {
   const deleteHoldRafRef = useRef<number | null>(null);
   const deleteHoldTimeoutRef = useRef<number | null>(null);
   const suppressNewFeatureClickRef = useRef(false);
+  const [isMobile, setIsMobile] = useState<boolean>(
+    () => (typeof window !== 'undefined' ? window.innerWidth <= MOBILE_BREAKPOINT : false)
+  );
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
     saveTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    const onResize = () => {
+      setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    window.visualViewport?.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile) setMobileSidebarOpen(false);
+  }, [isMobile]);
 
   useEffect(() => {
     document.title = activeProjectName ? `${activeProjectName} - workshop` : 'workshop';
@@ -1150,6 +1171,7 @@ export default function App() {
   const [ctxMenuSize, setCtxMenuSize] = useState({ width: 0, height: 0 });
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [editorId, setEditorId] = useState<string | null>(null);
+  const [isCreatingFeature, setIsCreatingFeature] = useState(false);
   const [draftTitle, setDraftTitle] = useState<string>('');
   const [draftDescription, setDraftDescription] = useState<string>('');
   const [draftTags, setDraftTags] = useState<string>('');
@@ -1525,7 +1547,7 @@ export default function App() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '20px minmax(0, 1fr)',
+            gridTemplateColumns: isMobile ? '20px minmax(0, 1fr) auto' : '20px minmax(0, 1fr)',
             alignItems: 'center',
             columnGap: 10,
             padding: '8px 12px',
@@ -1623,6 +1645,38 @@ export default function App() {
               </div>
             )}
           </div>
+          {isMobile ? (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                openCtxMenuAt(r.right - 170, r.bottom + 6, { kind: 'feature', id: f.id });
+              }}
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 999,
+                border: `1px solid ${themeVars.border}`,
+                background: themeVars.panelBg2,
+                color: themeVars.muted,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+              aria-label="Feature actions"
+              title="Feature actions"
+            >
+              ⋯
+            </button>
+          ) : null}
         </div>
 
         <div
@@ -2660,14 +2714,18 @@ export default function App() {
     setCtxMenu((s) => ({ ...s, open: false }));
   }
 
-  function openCtxMenu(e: React.MouseEvent, target: CtxTarget) {
-    e.preventDefault(); // blocks the browser right-click menu
+  function openCtxMenuAt(x: number, y: number, target: CtxTarget) {
     setCtxMenu({
       open: true,
-      x: e.clientX,
-      y: e.clientY,
+      x,
+      y,
       target,
     });
+  }
+
+  function openCtxMenu(e: React.MouseEvent, target: CtxTarget) {
+    e.preventDefault(); // blocks the browser right-click menu
+    openCtxMenuAt(e.clientX, e.clientY, target);
   }
 
   function scrollToFeatureCard(id: string) {
@@ -2688,8 +2746,13 @@ export default function App() {
     });
   }
 
-function createFeatureAtEnd() {
+function createFeatureAtEnd(openEditorAfter = false) {
   if (editingDisabled) return;
+  if (openEditorAfter) {
+    const preferredPhase = phaseFilter !== 'all' ? phaseFilter : undefined;
+    openCreateFeatureEditor(preferredPhase);
+    return;
+  }
   const newId = uid('feat');
   setDoc((prev) => {
     const phaseId = firstPhaseId(prev.phases);
@@ -2706,60 +2769,26 @@ function createFeatureAtEnd() {
     };
     return { ...prev, features: [...prev.features, f] };
   });
+  setSelectedId(newId);
   scrollToFeatureCard(newId);
   setFlashId(newId);
   setTimeout(() => setFlashId((v) => (v === newId ? null : v)), 900);
 }
 
 function NewFeatureButton() {
-  const drag = useDraggable({ id: NEW_FEATURE_DRAG_ID, disabled: editingDisabled });
-  const isDraggingNew = drag.isDragging;
-
   return (
-    <div style={{ position: 'relative', display: 'inline-flex' }}>
-      <div
-        aria-hidden
-        style={{
-          ...buttonStyle,
-          background: themeVars.panelBg2,
-          border: `1px dashed ${themeVars.borderSoft}`,
-          color: themeVars.muted,
-          opacity: isDraggingNew ? 1 : 0,
-          transform: isDraggingNew ? 'scale(1)' : 'scale(0.98)',
-          transition: 'opacity 160ms ease, transform 220ms cubic-bezier(0.16, 1, 0.3, 1)',
-          pointerEvents: 'none',
-          position: 'absolute',
-          inset: 0,
-        }}
-      >
-        + New
-      </div>
-
-      <button
-        ref={drag.setNodeRef}
-        {...drag.attributes}
-        {...drag.listeners}
-        disabled={editingDisabled}
-        onClick={() => {
-          if (suppressNewFeatureClickRef.current) {
-            suppressNewFeatureClickRef.current = false;
-            return;
-          }
-          createFeatureAtEnd();
-        }}
-        style={{
-          ...buttonStyle,
-          opacity: isDraggingNew ? 0 : 1,
-          transform: isDraggingNew ? 'scale(0.98)' : 'scale(1)',
-          transition: 'opacity 140ms ease, transform 220ms cubic-bezier(0.16, 1, 0.3, 1)',
-          touchAction: 'none',
-          ...(editingDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : null),
-        }}
-        title="N"
-      >
-        + New
-      </button>
-    </div>
+    <button
+      type="button"
+      disabled={editingDisabled}
+      onClick={() => createFeatureAtEnd(true)}
+      style={{
+        ...buttonStyle,
+        ...(editingDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : null),
+      }}
+      title="Create a new feature"
+    >
+      + New
+    </button>
   );
 }
 
@@ -2841,11 +2870,13 @@ function cloneFeature(id: string) {
 function closeEditor() {
   setIsEditorOpen(false);
   setEditorId(null);
+  setIsCreatingFeature(false);
 }
 
 function openEditor(id: string) {
   const feature = doc.features.find((f) => f.id === id);
   if (!feature) return;
+  setIsCreatingFeature(false);
   setEditorId(id);
   setDraftTitle(feature.title);
   setDraftDescription(feature.description);
@@ -2855,8 +2886,49 @@ function openEditor(id: string) {
   setIsEditorOpen(true);
 }
 
+function openCreateFeatureEditor(preferredPhaseId?: string) {
+  const defaultPhaseId = firstPhaseId(doc.phases);
+  const phaseId =
+    preferredPhaseId && preferredPhaseId !== 'all' && doc.phases.some((p) => p.id === preferredPhaseId)
+      ? preferredPhaseId
+      : defaultPhaseId;
+  setIsCreatingFeature(true);
+  setEditorId(null);
+  setDraftTitle('New feature');
+  setDraftDescription('');
+  setDraftTags('');
+  setDraftPhaseId(phaseId);
+  setDraftStatus('not_started');
+  setIsEditorOpen(true);
+}
+
 function saveEditor() {
   if (editingDisabled) return;
+  if (isCreatingFeature) {
+    const phaseId = doc.phases.some((p) => p.id === draftPhaseId) ? draftPhaseId : firstPhaseId(doc.phases);
+    const newId = uid('feat');
+    const nextFeature: Feature = {
+      id: newId,
+      title: draftTitle.trim() || 'New feature',
+      description: draftDescription,
+      status: draftStatus,
+      phaseId,
+      tags: draftTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean),
+      order: nextOrder(doc),
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    setDoc((prev) => ({ ...prev, features: [...prev.features, nextFeature] }));
+    setSelectedId(newId);
+    scrollToFeatureCard(newId);
+    setFlashId(newId);
+    setTimeout(() => setFlashId((v) => (v === newId ? null : v)), 900);
+    closeEditor();
+    return;
+  }
   if (!editorId) return;
   setDoc((prev) => ({
     ...prev,
@@ -3659,13 +3731,24 @@ useEffect(() => {
     fontWeight: 700,
     cursor: 'pointer',
   };
+  const mobileTopBarPill: React.CSSProperties = {
+    height: 38,
+    borderRadius: 12,
+    border: `1px solid ${themeVars.border}`,
+    background: themeVars.panelBgStrong,
+    boxShadow: themeVars.shadow1,
+    display: 'inline-flex',
+    alignItems: 'center',
+  };
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const sidebarVisible = !isMobile || mobileSidebarOpen;
   const shellStyle: React.CSSProperties = {
-    height: '100vh',
-    width: '100vw',
+    height: '100dvh',
+    minHeight: '100dvh',
+    width: '100%',
     overflow: 'hidden',
     display: 'grid',
-    gridTemplateColumns: '240px minmax(0, 1fr)',
+    gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '240px minmax(0, 1fr)',
     background: themeVars.appBg,
     color: themeVars.appText,
     fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif',
@@ -3681,12 +3764,28 @@ useEffect(() => {
     flexDirection: 'column',
     gap: 12,
     minWidth: 0,
+    ...(isMobile
+      ? {
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 'min(84vw, 340px)',
+          zIndex: 10060,
+          transform: mobileSidebarOpen ? 'translateX(0)' : 'translateX(-102%)',
+          transition: reducedMotion ? 'none' : 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1)',
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 56px)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)',
+          boxShadow: themeVars.shadow3,
+          pointerEvents: mobileSidebarOpen ? 'auto' : 'none',
+        }
+      : null),
   };
 
   const navBtn = (active: boolean): React.CSSProperties => ({
     textAlign: 'left',
     width: '100%',
-    padding: '10px 12px',
+    padding: isMobile ? '12px 14px' : '10px 12px',
     borderRadius: 12,
     border: `1px solid ${active ? 'rgba(120,200,255,0.35)' : themeVars.border}`,
     background: active ? 'rgba(120,200,255,0.12)' : themeVars.panelBg2,
@@ -3694,6 +3793,7 @@ useEffect(() => {
     cursor: 'pointer',
     fontWeight: 800,
     letterSpacing: 0.2,
+    fontSize: isMobile ? 14 : 12,
   });
 
   const docScrollStyle: React.CSSProperties = {
@@ -3703,14 +3803,14 @@ useEffect(() => {
     overflowX: 'hidden',
     scrollBehavior: reducedMotion ? 'auto' : 'smooth',
     scrollSnapType: 'y mandatory',
-    scrollPaddingTop: 0,
+    scrollPaddingTop: isMobile ? 62 : 0,
   };
 
   const sectionStyle: React.CSSProperties = {
     height: '100%',
     maxHeight: '100%',
     minHeight: 0,
-    padding: 14,
+    padding: isMobile ? '62px 14px 14px' : 14,
     boxSizing: 'border-box',
     overflow: 'hidden',
     display: 'flex',
@@ -3721,7 +3821,7 @@ useEffect(() => {
   };
   const roadmapSectionStyle: React.CSSProperties = {
     ...sectionStyle,
-    padding: 0,
+    padding: isMobile ? '56px 0 0' : 0,
     background: isLight ? '#ffffff' : 'transparent',
   };
   const PRD_COL_W = 520;
@@ -3798,6 +3898,14 @@ useEffect(() => {
     fontWeight: 800,
     fontSize: 12,
     cursor: 'pointer',
+  };
+  const prdActionBtnMobile: React.CSSProperties = {
+    ...prdActionBtn,
+    padding: '6px 10px',
+    borderRadius: 11,
+    minHeight: 34,
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
   };
   const formatLastEdited = (ts: number) => {
     if (!ts) return '—';
@@ -4073,38 +4181,166 @@ useEffect(() => {
         ? Math.max(MENU_MARGIN, ctxMenu.y - ctxMenuHeight)
         : ctxMenu.y
       : ctxMenu.y;
+  const statusPopoverW = 170;
+  const statusPopoverH = 210;
+  const statusPopoverLeft =
+    viewportWidth > 0
+      ? Math.max(MENU_MARGIN, Math.min(statusPopover.x, viewportWidth - statusPopoverW - MENU_MARGIN))
+      : statusPopover.x;
+  const statusPopoverTop =
+    viewportHeight > 0
+      ? statusPopover.y + statusPopoverH + MENU_MARGIN > viewportHeight
+        ? Math.max(MENU_MARGIN, statusPopover.y - statusPopoverH)
+        : statusPopover.y
+      : statusPopover.y;
+  const statusFilterMenuW = isMobile
+    ? Math.min(260, Math.max(200, viewportWidth - MENU_MARGIN * 2))
+    : 220;
+  const statusFilterMenuH = 330;
+  const statusFilterMenuLeft =
+    viewportWidth > 0
+      ? Math.max(MENU_MARGIN, Math.min(statusFilterMenu.x, viewportWidth - statusFilterMenuW - MENU_MARGIN))
+      : statusFilterMenu.x;
+  const statusFilterMenuTop =
+    viewportHeight > 0
+      ? statusFilterMenu.y + statusFilterMenuH + MENU_MARGIN > viewportHeight
+        ? Math.max(MENU_MARGIN, statusFilterMenu.y - statusFilterMenuH)
+        : statusFilterMenu.y
+      : statusFilterMenu.y;
   const projectPickerProject = projectColorPicker.projectId
     ? projects.find((p) => p.id === projectColorPicker.projectId) ?? null
     : null;
+  const closeMobileSidebar = () => {
+    if (isMobile) setMobileSidebarOpen(false);
+  };
 
   return (
     <div style={{ ...shellStyle, ['--prdLink' as any]: isLight ? 'rgba(30,120,255,0.92)' : 'rgba(120,200,255,0.95)' }}>
-      <aside style={sidebarStyle}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-            <img src={logoSrc} alt="Workshop" style={logoStyle} />
-            {isDemoMode ? (
-              <div
-                style={{
-                  marginLeft: 'auto',
-                  padding: '2px 6px',
-                  borderRadius: 999,
-                  border: '1px solid rgba(255,186,90,0.55)',
-                  background: 'rgba(255,186,90,0.18)',
-                  color: 'rgba(255,210,140,0.95)',
-                  fontSize: 10,
-                  fontWeight: 800,
-                  letterSpacing: 0.2,
-                }}
-              >
-                Demo mode
-              </div>
-            ) : null}
-          </div>
-          <div style={{ fontSize: 12, opacity: 0.65 }}>
-            v{APP_VERSION} • Local-first • {doc.features.length} feature{doc.features.length === 1 ? '' : 's'}
-          </div>
+      {isMobile && sidebarVisible ? (
+        <div
+          onMouseDown={() => setMobileSidebarOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10055,
+            background: 'transparent',
+          }}
+        />
+      ) : null}
+      {isMobile ? (
+        <div
+          style={{
+            position: 'fixed',
+            top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+            left: 12,
+            zIndex: 900,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setMobileSidebarOpen((prev) => !prev)}
+            style={{
+              ...mobileTopBarPill,
+              width: 38,
+              justifyContent: 'center',
+              cursor: 'pointer',
+              fontWeight: 900,
+              fontSize: 16,
+            }}
+            aria-label={sidebarVisible ? 'Close menu' : 'Open menu'}
+            title={sidebarVisible ? 'Close menu' : 'Open menu'}
+          >
+            {sidebarVisible ? (
+              <span aria-hidden style={{ position: 'relative', width: 14, height: 14, display: 'inline-block' }}>
+                <span
+                  style={{
+                    position: 'absolute',
+                    left: 1,
+                    right: 1,
+                    top: 6,
+                    height: 1.8,
+                    borderRadius: 999,
+                    background: themeVars.appText,
+                    transform: 'rotate(45deg)',
+                  }}
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    left: 1,
+                    right: 1,
+                    top: 6,
+                    height: 1.8,
+                    borderRadius: 999,
+                    background: themeVars.appText,
+                    transform: 'rotate(-45deg)',
+                  }}
+                />
+              </span>
+            ) : (
+              <span aria-hidden style={{ display: 'grid', gap: 3, width: 14 }}>
+                <span style={{ height: 1.8, borderRadius: 999, background: themeVars.appText }} />
+                <span style={{ height: 1.8, borderRadius: 999, background: themeVars.appText }} />
+                <span style={{ height: 1.8, borderRadius: 999, background: themeVars.appText }} />
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setMobileSidebarOpen(true)}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: '0 4px',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              height: 38,
+            }}
+            aria-label="Open menu"
+            title="Open menu"
+          >
+            <img src={logoSrc} alt="Workshop" style={{ ...logoStyle, height: 20 }} />
+          </button>
         </div>
+      ) : null}
+      <aside style={sidebarStyle}>
+        {!isMobile ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+              <img src={logoSrc} alt="Workshop" style={logoStyle} />
+              {isDemoMode ? (
+                <div
+                  style={{
+                    marginLeft: 'auto',
+                    padding: '2px 6px',
+                    borderRadius: 999,
+                    border: '1px solid rgba(255,186,90,0.55)',
+                    background: 'rgba(255,186,90,0.18)',
+                    color: 'rgba(255,210,140,0.95)',
+                    fontSize: 10,
+                    fontWeight: 800,
+                    letterSpacing: 0.2,
+                  }}
+                >
+                  Demo mode
+                </div>
+              ) : null}
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.65 }}>
+              v{APP_VERSION} • Local-first • {doc.features.length} feature{doc.features.length === 1 ? '' : 's'}
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, opacity: 0.62 }}>
+            Local-first • {doc.features.length} feature{doc.features.length === 1 ? '' : 's'}
+          </div>
+        )}
 
         <div style={{ fontSize: 11, opacity: 0.6, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase' }}>
           Projects
@@ -4129,7 +4365,10 @@ useEffect(() => {
                   openProjectSettings(project.id);
                 }}
                 onClick={() => {
-                  if (project.id === activeProjectId) return;
+                  if (project.id === activeProjectId) {
+                    closeMobileSidebar();
+                    return;
+                  }
                   closeEditor();
                   closeDetails();
                   closeCtxMenu();
@@ -4141,11 +4380,15 @@ useEffect(() => {
                   setStatusFilter(new Set(ALL_STATUSES));
                   setTagQuery('');
                   setActiveProjectId(project.id);
+                  closeMobileSidebar();
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    if (project.id === activeProjectId) return;
+                    if (project.id === activeProjectId) {
+                      closeMobileSidebar();
+                      return;
+                    }
                     closeEditor();
                     closeDetails();
                     closeCtxMenu();
@@ -4157,6 +4400,7 @@ useEffect(() => {
                     setStatusFilter(new Set(ALL_STATUSES));
                     setTagQuery('');
                     setActiveProjectId(project.id);
+                    closeMobileSidebar();
                   }
                 }}
                 style={{
@@ -4188,7 +4432,7 @@ useEffect(() => {
                       alignItems: 'center',
                       gap: 6,
                       fontWeight: 900,
-                      fontSize: isActive ? 12 : 11,
+                      fontSize: isMobile ? (isActive ? 16 : 15) : isActive ? 12 : 11,
                       letterSpacing: 0.1,
                       color: themeVars.appText,
                       whiteSpace: 'normal',
@@ -4211,30 +4455,66 @@ useEffect(() => {
                     ) : null}
                     {projectName}
                   </div>
-                  {isActive ? (
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        padding: '1px 6px',
-                        borderRadius: 999,
-                        border: `1px solid ${isLight ? 'rgba(30,120,255,0.35)' : 'rgba(120,200,255,0.4)'}`,
-                        background: isLight ? 'rgba(30,120,255,0.14)' : 'rgba(120,200,255,0.14)',
-                        color: isLight ? 'rgba(18,88,180,0.98)' : 'rgba(180,225,255,0.96)',
-                        fontSize: 10,
-                        fontWeight: 900,
-                        letterSpacing: 0.3,
-                        textTransform: 'uppercase',
-                        flexShrink: 0,
-                      }}
-                    >
-                      Active
-                    </span>
-                  ) : null}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    {isActive ? (
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          padding: '1px 6px',
+                          borderRadius: 999,
+                          border: `1px solid ${isLight ? 'rgba(30,120,255,0.35)' : 'rgba(120,200,255,0.4)'}`,
+                          background: isLight ? 'rgba(30,120,255,0.14)' : 'rgba(120,200,255,0.14)',
+                          color: isLight ? 'rgba(18,88,180,0.98)' : 'rgba(180,225,255,0.96)',
+                          fontSize: 10,
+                          fontWeight: 900,
+                          letterSpacing: 0.3,
+                          textTransform: 'uppercase',
+                          flexShrink: 0,
+                        }}
+                      >
+                        Active
+                      </span>
+                    ) : null}
+                    {isMobile ? (
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openProjectSettings(project.id);
+                        }}
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 999,
+                          border: `1px solid ${themeVars.border}`,
+                          background: themeVars.panelBg2,
+                          color: themeVars.muted,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 0,
+                          cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                          fontWeight: 900,
+                          fontSize: 14,
+                          opacity: editingDisabled ? 0.45 : 0.78,
+                        }}
+                        disabled={editingDisabled}
+                        aria-label="Project actions"
+                        title="Project actions"
+                      >
+                        ⋯
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, opacity: 0.7 }}>{stats}</div>
+                <div style={{ fontSize: isMobile ? 13 : 11, opacity: 0.74 }}>{stats}</div>
                 {isActive ? (
-                  <div style={{ fontSize: 11, opacity: 0.55 }}>
+                  <div style={{ fontSize: isMobile ? 13 : 11, opacity: 0.6 }}>
                     Updated {formatLastEdited(project.lastEdited)}
                   </div>
                 ) : null}
@@ -4317,6 +4597,7 @@ useEffect(() => {
               onClick={() => {
                 if (activeDragId === NEW_FEATURE_DRAG_ID) return;
                 scrollToSection(key);
+                closeMobileSidebar();
               }}
             >
               {SECTION_LABELS[key]}
@@ -4328,16 +4609,19 @@ useEffect(() => {
 
         <button
           type="button"
-          onClick={() => setPaletteOpen(true)}
+          onClick={() => {
+            setPaletteOpen(true);
+            closeMobileSidebar();
+          }}
           style={{
-            padding: '10px 12px',
+            padding: isMobile ? '12px 14px' : '10px 12px',
             borderRadius: 12,
             border: `1px solid ${themeVars.border}`,
             background: themeVars.panelBg2,
             color: 'inherit',
             cursor: 'pointer',
             fontWeight: 900,
-            fontSize: 12,
+            fontSize: isMobile ? 15 : 12,
             textAlign: 'left',
           }}
           title="Search & jump (⌘K / Ctrl+K)"
@@ -4349,26 +4633,31 @@ useEffect(() => {
 
         <div style={{ flex: 1 }} />
 
-        <div ref={settingsRef} style={{ position: 'relative', alignSelf: 'flex-start' }}>
+        <div
+          ref={settingsRef}
+          style={{ position: 'relative', alignSelf: 'flex-start', width: isMobile ? '100%' : undefined }}
+        >
           <button
             type="button"
             onClick={() => setSettingsOpen((prev) => !prev)}
             style={{
-              padding: '8px 10px',
+              padding: isMobile ? '12px 14px' : '8px 10px',
               borderRadius: 12,
               border: `1px solid ${themeVars.border}`,
               background: themeVars.panelBg2,
               color: 'inherit',
               cursor: 'pointer',
               fontWeight: 900,
-              fontSize: 12,
+              fontSize: isMobile ? 15 : 12,
               display: 'inline-flex',
               alignItems: 'center',
               gap: 8,
+              width: isMobile ? '100%' : undefined,
+              justifyContent: isMobile ? 'center' : 'flex-start',
             }}
             title="Settings"
           >
-            <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>
+            <span aria-hidden style={{ fontSize: isMobile ? 16 : 14, lineHeight: 1 }}>
               ⚙
             </span>
             Settings
@@ -4480,9 +4769,11 @@ useEffect(() => {
           ) : null}
         </div>
 
-        <div style={{ fontSize: 11, opacity: 0.55, lineHeight: 1.35 }}>
-          Tip: You can deep-link sections with hashes like <span style={{ opacity: 0.9 }}>#prd</span>.
-        </div>
+        {!isMobile ? (
+          <div style={{ fontSize: 11, opacity: 0.55, lineHeight: 1.35 }}>
+            Tip: You can deep-link sections with hashes like <span style={{ opacity: 0.9 }}>#prd</span>.
+          </div>
+        ) : null}
       </aside>
 
       <main ref={scrollRootRef} style={docScrollStyle}>
@@ -4493,33 +4784,66 @@ useEffect(() => {
           }}
           style={sectionStyle}
         >
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+          <div
+            style={
+              isMobile
+                ? { display: 'grid', gap: 10 }
+                : { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }
+            }
+          >
             <div>
               <div
                 style={{
                   opacity: 0.95,
                   fontWeight: 950,
-                  fontSize: 26,
+                  fontSize: isMobile ? 24 : 26,
                   letterSpacing: 0.1,
                   color: themeVars.appText,
+                  lineHeight: 1.08,
                 }}
               >
                 PRD
               </div>
-              <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: themeVars.muted }}>
+              <div
+                style={{
+                  marginTop: isMobile ? 5 : 6,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: themeVars.muted,
+                  maxWidth: isMobile ? 260 : undefined,
+                }}
+              >
                 {prdMode === 'editTemplate'
-                  ? 'Template edit mode • autosaved locally'
-                  : 'Outline goals, scope, and success metrics.'}
+                  ? isMobile
+                    ? 'Template mode • autosaved'
+                    : 'Template edit mode • autosaved locally'
+                  : isMobile
+                    ? 'Goals, scope, and success metrics.'
+                    : 'Outline goals, scope, and success metrics.'}
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div
+              data-no-snap={isMobile ? true : undefined}
+              style={
+                isMobile
+                  ? {
+                      display: 'flex',
+                      gap: 8,
+                      alignItems: 'center',
+                      overflowX: 'auto',
+                      overflowY: 'hidden',
+                      paddingBottom: 2,
+                    }
+                  : { display: 'flex', gap: 8, alignItems: 'center' }
+              }
+            >
               <button
                 type="button"
                 onClick={undoPrd}
                 disabled={editingDisabled || activePrdHistory.past.length === 0}
                 style={{
-                  ...prdActionBtn,
+                  ...(isMobile ? prdActionBtnMobile : prdActionBtn),
                   cursor:
                     editingDisabled || activePrdHistory.past.length === 0 ? 'not-allowed' : 'pointer',
                   opacity: editingDisabled || activePrdHistory.past.length === 0 ? 0.5 : 1,
@@ -4533,7 +4857,7 @@ useEffect(() => {
                 onClick={redoPrd}
                 disabled={editingDisabled || activePrdHistory.future.length === 0}
                 style={{
-                  ...prdActionBtn,
+                  ...(isMobile ? prdActionBtnMobile : prdActionBtn),
                   cursor:
                     editingDisabled || activePrdHistory.future.length === 0 ? 'not-allowed' : 'pointer',
                   opacity: editingDisabled || activePrdHistory.future.length === 0 ? 0.5 : 1,
@@ -4554,8 +4878,7 @@ useEffect(() => {
                 }}
                 disabled={editingDisabled}
                 style={{
-                  padding: '8px 12px',
-                  borderRadius: 12,
+                  ...(isMobile ? prdActionBtnMobile : { padding: '8px 12px', borderRadius: 12 }),
                   border: `1px solid ${themeVars.border}`,
                   background:
                     prdMode === 'editTemplate' ? 'rgba(120,200,255,0.12)' : themeVars.panelBg2,
@@ -4577,8 +4900,7 @@ useEffect(() => {
                 }}
                 disabled={editingDisabled}
                 style={{
-                  padding: '8px 12px',
-                  borderRadius: 12,
+                  ...(isMobile ? prdActionBtnMobile : { padding: '8px 12px', borderRadius: 12 }),
                   border: `1px solid ${themeVars.border}`,
                   background: themeVars.panelBg2,
                   color: 'inherit',
@@ -4588,7 +4910,7 @@ useEffect(() => {
                 }}
                 title="Reset PRD template"
               >
-                Reset template
+                {isMobile ? 'Reset' : 'Reset template'}
               </button>
             </div>
           </div>
@@ -4656,20 +4978,23 @@ useEffect(() => {
               minHeight: 0,
               overflowX: 'auto',
               overflowY: 'hidden',
+              position: 'relative',
               paddingTop: 10,
-              paddingLeft: 18,
-              paddingRight: 12,
+              paddingLeft: isMobile ? 12 : 18,
+              paddingRight: isMobile ? 24 : 12,
               paddingBottom: 14,
             }}
           >
             <div
               style={{
                 height: '100%',
-                columnWidth: PRD_COL_W,
+                columnWidth: isMobile ? 'calc(100vw - 92px)' : PRD_COL_W,
                 columnGap: PRD_COL_GAP,
                 columnFill: 'auto',
-                columnRule: `1px solid ${isLight ? 'rgba(10,16,24,0.14)' : themeVars.divider}`,
-                paddingRight: 12,
+                columnRule: isMobile
+                  ? 'none'
+                  : `1px solid ${isLight ? 'rgba(10,16,24,0.14)' : themeVars.divider}`,
+                paddingRight: isMobile ? 42 : 12,
                 paddingBottom: 8,
                 boxSizing: 'border-box',
               }}
@@ -5266,58 +5591,113 @@ useEffect(() => {
                 }}
               >
                 <div style={{ flex: '0 0 auto', padding: '14px 14px 0' }}>
-                <div style={toolbarStyle}>
-                  <div
-                    style={{
-                      fontSize: 18,
-                      fontWeight: 950,
-                      letterSpacing: 0.1,
-                      opacity: 0.95,
-                      lineHeight: 1.1,
-                      marginRight: 6,
-                    }}
-                  >
-                    Roadmap
-                  </div>
-                  <button type="button" onMouseDown={(e) => openStatusFilterMenu(e)} style={statusChipBase}>
-                    Statuses ({statusFilter.size})
-                  </button>
+                <div style={isMobile ? { display: 'grid', gap: 8 } : toolbarStyle}>
+                  {isMobile ? (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <div
+                          style={{
+                            fontSize: 18,
+                            fontWeight: 950,
+                            letterSpacing: 0.1,
+                            opacity: 0.95,
+                            lineHeight: 1.08,
+                          }}
+                        >
+                          Roadmap
+                        </div>
+                        <button type="button" onMouseDown={(e) => openStatusFilterMenu(e)} style={statusChipBase}>
+                          Statuses ({statusFilter.size})
+                        </button>
+                      </div>
+                      <select
+                        value={phaseFilter}
+                        onChange={(e) => setPhaseFilter(e.target.value)}
+                        style={{ ...inputStyle, width: '100%' }}
+                        aria-label="Phase filter"
+                      >
+                        <option value="all">All phases</option>
+                        {[...doc.phases]
+                          .sort((a, b) => a.order - b.order)
+                          .filter((p) => !archivedSet.has(p.id))
+                          .map((p) => {
+                            const label = p.name.length > 28 ? `${p.name.slice(0, 27)}…` : p.name;
+                            return (
+                              <option key={p.id} value={p.id} title={p.name}>
+                                {label}
+                              </option>
+                            );
+                          })}
+                      </select>
+                      <input
+                        value={tagQuery}
+                        onChange={(e) => setTagQuery(e.target.value)}
+                        placeholder="Search tags/title/notes…"
+                        style={{ ...inputStyle, width: '100%' }}
+                        aria-label="Search"
+                      />
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <div style={{ opacity: 0.6, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          {doc.features.length} feature{doc.features.length === 1 ? '' : 's'} • autosaved
+                        </div>
+                        <NewFeatureButton />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div
+                        style={{
+                          fontSize: 18,
+                          fontWeight: 950,
+                          letterSpacing: 0.1,
+                          opacity: 0.95,
+                          lineHeight: 1.1,
+                          marginRight: 6,
+                        }}
+                      >
+                        Roadmap
+                      </div>
+                      <button type="button" onMouseDown={(e) => openStatusFilterMenu(e)} style={statusChipBase}>
+                        Statuses ({statusFilter.size})
+                      </button>
 
-                  <select
-                    value={phaseFilter}
-                    onChange={(e) => setPhaseFilter(e.target.value)}
-                    style={{ ...inputStyle, width: 200 }}
-                    aria-label="Phase filter"
-                  >
-                    <option value="all">All phases</option>
-                    {[...doc.phases]
-                      .sort((a, b) => a.order - b.order)
-                      .filter((p) => !archivedSet.has(p.id))
-                      .map((p) => {
-                        const label = p.name.length > 28 ? `${p.name.slice(0, 27)}…` : p.name;
-                        return (
-                          <option key={p.id} value={p.id} title={p.name}>
-                            {label}
-                          </option>
-                        );
-                      })}
-                  </select>
+                      <select
+                        value={phaseFilter}
+                        onChange={(e) => setPhaseFilter(e.target.value)}
+                        style={{ ...inputStyle, width: 200 }}
+                        aria-label="Phase filter"
+                      >
+                        <option value="all">All phases</option>
+                        {[...doc.phases]
+                          .sort((a, b) => a.order - b.order)
+                          .filter((p) => !archivedSet.has(p.id))
+                          .map((p) => {
+                            const label = p.name.length > 28 ? `${p.name.slice(0, 27)}…` : p.name;
+                            return (
+                              <option key={p.id} value={p.id} title={p.name}>
+                                {label}
+                              </option>
+                            );
+                          })}
+                      </select>
 
-                  <input
-                    value={tagQuery}
-                    onChange={(e) => setTagQuery(e.target.value)}
-                    placeholder="Search tags/title/notes…"
-                    style={{ ...inputStyle, minWidth: 220 }}
-                    aria-label="Search"
-                  />
+                      <input
+                        value={tagQuery}
+                        onChange={(e) => setTagQuery(e.target.value)}
+                        placeholder="Search tags/title/notes…"
+                        style={{ ...inputStyle, minWidth: 220 }}
+                        aria-label="Search"
+                      />
 
-                  <div style={{ flex: 1 }} />
+                      <div style={{ flex: 1 }} />
 
-                  <div style={{ opacity: 0.6, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    {doc.features.length} feature{doc.features.length === 1 ? '' : 's'} • autosaved
-                  </div>
+                      <div style={{ opacity: 0.6, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        {doc.features.length} feature{doc.features.length === 1 ? '' : 's'} • autosaved
+                      </div>
 
-                  <NewFeatureButton />
+                      <NewFeatureButton />
+                    </>
+                  )}
                 </div>
 
                 {doc.features.length === 0 && (
@@ -6049,15 +6429,15 @@ useEffect(() => {
             position: 'fixed',
             inset: 0,
             zIndex: 10020,
-            background: themeVars.overlay,
+            background: isMobile ? 'transparent' : themeVars.overlay,
           }}
         >
           <div
             onMouseDown={(e) => e.stopPropagation()}
             style={{
               position: 'absolute',
-              top: statusPopover.y,
-              left: statusPopover.x,
+              top: statusPopoverTop,
+              left: statusPopoverLeft,
               background: themeVars.panelBgStrong,
               color: themeVars.appText,
               borderRadius: 10,
@@ -6099,23 +6479,31 @@ useEffect(() => {
       {statusFilterMenu.open ? (
         <div
           onMouseDown={closeStatusFilterMenu}
-          style={{ position: 'fixed', inset: 0, zIndex: 10050, background: themeVars.overlay }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10050,
+            background: isMobile ? 'transparent' : themeVars.overlay,
+          }}
         >
           <div
             onMouseDown={(e) => e.stopPropagation()}
             style={{
               position: 'fixed',
-              left: statusFilterMenu.x,
-              top: statusFilterMenu.y,
+              left: statusFilterMenuLeft,
+              top: statusFilterMenuTop,
               background: themeVars.panelBgStrong,
               color: themeVars.appText,
               borderRadius: 12,
               padding: 10,
-              minWidth: 220,
+              minWidth: statusFilterMenuW,
+              maxWidth: statusFilterMenuW,
+              maxHeight: 'min(62dvh, 360px)',
               border: `1px solid ${themeVars.border}`,
               boxShadow: themeVars.shadowPop,
               display: 'grid',
               gap: 8,
+              overflowY: 'auto',
             }}
           >
             <div style={{ display: 'flex', gap: 8 }}>
@@ -6362,10 +6750,10 @@ useEffect(() => {
             inset: 0,
             background: themeVars.overlay,
             display: 'flex',
-            alignItems: 'center',
+            alignItems: isMobile ? 'stretch' : 'center',
             justifyContent: 'center',
             zIndex: 1000,
-            padding: 16,
+            padding: isMobile ? 10 : 16,
           }}
         >
           <div
@@ -6374,9 +6762,12 @@ useEffect(() => {
               background: themeVars.panelBgStrong,
               color: themeVars.appText,
               borderRadius: 12,
-              padding: 20,
-              minWidth: 380,
-              maxWidth: 'min(560px, 100%)',
+              padding: isMobile ? 14 : 20,
+              minWidth: isMobile ? 0 : 380,
+              width: isMobile ? '100%' : undefined,
+              maxWidth: isMobile ? '100%' : 'min(560px, 100%)',
+              maxHeight: isMobile ? 'calc(100dvh - 20px)' : 'unset',
+              overflowY: isMobile ? 'auto' : 'visible',
               boxShadow: themeVars.shadow3,
               border: `1px solid ${themeVars.border}`,
               display: 'grid',
@@ -6384,7 +6775,9 @@ useEffect(() => {
             }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: 18, fontWeight: 750 }}>Edit feature</div>
+              <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>
+                {isCreatingFeature ? 'Add feature' : 'Edit feature'}
+              </div>
               <div style={{ fontSize: 13, opacity: 0.72 }}>
                 {doc.phases.find((p) => p.id === draftPhaseId)?.name ?? 'Unknown phase'} ·{' '}
                 {STATUS_META[draftStatus].label}
@@ -6393,6 +6786,8 @@ useEffect(() => {
                 <div style={{ fontSize: 12, color: themeVars.muted }}>
                   Demo mode: changes aren’t saved.
                 </div>
+              ) : isCreatingFeature ? (
+                <div style={{ fontSize: 12, color: themeVars.muted }}>Feature is only created when you press Save.</div>
               ) : null}
             </div>
 
@@ -6433,7 +6828,7 @@ useEffect(() => {
                 value={draftDescription}
                 readOnly={editingDisabled}
                 onChange={(e) => setDraftDescription(e.target.value)}
-                rows={4}
+                rows={isMobile ? 5 : 4}
                 style={{
                   padding: '10px 12px',
                   borderRadius: 12,
@@ -6490,7 +6885,7 @@ useEffect(() => {
               />
             </div>
 
-            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr' }}>
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
               <div style={{ display: 'grid', gap: 8 }}>
                 <label style={{ fontSize: 13, opacity: 0.8 }}>Phase</label>
                 <select
@@ -6550,18 +6945,26 @@ useEffect(() => {
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: isMobile ? 'stretch' : 'flex-end',
+                gap: 10,
+                marginTop: 4,
+              }}
+            >
               <button
                 type="button"
                 onClick={closeEditor}
                 style={{
-                  padding: '8px 12px',
+                  padding: '10px 12px',
                   borderRadius: 10,
                   border: `1px solid ${themeVars.border}`,
                   background: themeVars.panelBg2,
                   color: 'inherit',
                   cursor: 'pointer',
                   fontWeight: 600,
+                  flex: isMobile ? 1 : undefined,
                 }}
               >
                 Cancel
@@ -6571,7 +6974,7 @@ useEffect(() => {
                 onClick={saveEditor}
                 disabled={editingDisabled}
                 style={{
-                  padding: '8px 12px',
+                  padding: '10px 12px',
                   borderRadius: 10,
                   border: `1px solid ${themeVars.border}`,
                   background: 'linear-gradient(120deg, rgba(120,200,255,0.6), rgba(120,160,255,0.7))',
@@ -6579,9 +6982,10 @@ useEffect(() => {
                   cursor: editingDisabled ? 'not-allowed' : 'pointer',
                   fontWeight: 700,
                   opacity: editingDisabled ? 0.6 : 1,
+                  flex: isMobile ? 1 : undefined,
                 }}
               >
-                Save
+                {isCreatingFeature ? 'Save new feature' : 'Save'}
               </button>
             </div>
           </div>
