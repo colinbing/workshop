@@ -1068,6 +1068,10 @@ export default function App() {
   );
   const doc = isDemoMode ? demoDoc : activeProject?.doc ?? seedDoc();
   const prd = isDemoMode ? demoPrd : activeProject?.prd ?? seedPrd();
+  const activeProjectName = useMemo(() => {
+    const raw = getPrdTitle(prd) || doc.title || '';
+    return raw.trim();
+  }, [prd, doc.title]);
   const setDoc = isDemoMode
     ? setDemoDoc
     : (next: React.SetStateAction<WorkshopDoc>) => {
@@ -1121,6 +1125,10 @@ export default function App() {
   useEffect(() => {
     saveTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    document.title = activeProjectName ? `${activeProjectName} - workshop` : 'workshop';
+  }, [activeProjectName]);
 
   const STATUS_META = useMemo(() => buildStatusMeta(theme), [theme]);
   // Filters
