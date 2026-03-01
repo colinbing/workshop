@@ -8,8 +8,12 @@
         var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
         var favicon = document.getElementById('app-favicon');
         if (!favicon) return;
+        var seedHref = favicon.getAttribute('href') || '';
+        var root = seedHref.replace(/workshop_logo-w\.png(?:\?.*)?$/, '');
+        var lightHref = root + 'workshop_logo-w.png';
+        var darkHref = root + 'workshop_logo_white-w.png';
         var setFavicon = function (isDark) {
-          favicon.setAttribute('href', isDark ? '/workshop_logo_white-w.png' : '/workshop_logo-w.png');
+          favicon.setAttribute('href', isDark ? darkHref : lightHref);
         };
         setFavicon(!!(mq && mq.matches));
         if (mq && mq.addEventListener) mq.addEventListener('change', function (e) { setFavicon(e.matches); });
