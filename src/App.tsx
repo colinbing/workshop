@@ -596,6 +596,38 @@ function readViewportSize(): ViewportSize {
   };
 }
 
+function reorderFeaturesByPhase(
+  doc: WorkshopDoc,
+  phaseId: string,
+  nextIdsInPhase: string[],
+  touchedId?: string
+): WorkshopDoc {
+  const byId = new Map(doc.features.map((f) => [f.id, f]));
+  const orderedPhaseIds = [...doc.phases].sort((a, b) => a.order - b.order).map((p) => p.id);
+  const idsByPhase = new Map<string, string[]>();
+  for (const pid of orderedPhaseIds) idsByPhase.set(pid, []);
+  for (const f of [...doc.features].sort((a, b) => a.order - b.order)) {
+    const bucket = idsByPhase.get(f.phaseId);
+    if (bucket) bucket.push(f.id);
+  }
+  idsByPhase.set(phaseId, nextIdsInPhase);
+  const touchedAt = now();
+  const nextFeatures: Feature[] = [];
+  for (const pid of orderedPhaseIds) {
+    const ids = idsByPhase.get(pid) ?? [];
+    for (const id of ids) {
+      const base = byId.get(id);
+      if (!base) continue;
+      nextFeatures.push({
+        ...base,
+        order: nextFeatures.length + 1,
+        updatedAt: touchedId && touchedId === id ? touchedAt : base.updatedAt,
+      });
+    }
+  }
+  return { ...doc, features: nextFeatures };
+}
+
 type InlineRichFieldProps = {
   blockId: string;
   html: string;
@@ -1419,6 +1451,7 @@ export default function App() {
       isDragging,
     } = useSortable({
       id: f.id,
+      disabled: isMobile,
       transition: {
         duration: 240,
         easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
@@ -1598,10 +1631,28 @@ export default function App() {
           }}
         >
           <div
-            {...attributes}
-            {...listeners}
+            {...(isMobile ? {} : attributes)}
+            {...(isMobile ? {} : listeners)}
+            onMouseDown={
+              isMobile
+                ? (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    openCtxMenuAt(r.left + 2, r.bottom + 8, { kind: 'feature', id: f.id });
+                  }
+                : undefined
+            }
+            onClick={
+              isMobile
+                ? (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                : undefined
+            }
             style={{
-              cursor: isDragging ? 'grabbing' : 'grab',
+              cursor: isMobile ? 'pointer' : isDragging ? 'grabbing' : 'grab',
               userSelect: 'none',
               WebkitUserSelect: 'none',
               opacity: 0.75,
@@ -1667,15 +1718,26 @@ export default function App() {
                   whiteSpace: 'normal',
                   overflowWrap: 'anywhere',
                   wordBreak: 'break-word',
-                  cursor: editingDisabled ? 'not-allowed' : 'text',
+                  cursor: editingDisabled ? 'not-allowed' : isMobile ? 'pointer' : 'text',
                 }}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  if (editingDisabled) return;
+                  if (isMobile) {
+                    openEditor(f.id);
+                    return;
+                  }
                   beginInlineTitleEdit(f.id, f.title);
                 }}
                 data-title
-                title={editingDisabled ? 'Demo mode: rename disabled' : 'Click to rename'}
+                title={
+                  editingDisabled
+                    ? 'Demo mode: rename disabled'
+                    : isMobile
+                      ? 'Tap to edit'
+                      : 'Click to rename'
+                }
               >
                 {f.title}
               </div>
@@ -2809,6 +2871,24 @@ function createFeatureAtEnd(openEditorAfter = false) {
   scrollToFeatureCard(newId);
   setFlashId(newId);
   setTimeout(() => setFlashId((v) => (v === newId ? null : v)), 900);
+}
+
+function moveFeatureWithinPhase(id: string, delta: number) {
+  if (editingDisabled) return;
+  setDoc((prev) => {
+    const feature = prev.features.find((f) => f.id === id);
+    if (!feature) return prev;
+    const phaseFeatures = prev.features
+      .filter((f) => f.phaseId === feature.phaseId)
+      .sort((a, b) => a.order - b.order);
+    const ids = phaseFeatures.map((f) => f.id);
+    const index = ids.indexOf(id);
+    if (index === -1) return prev;
+    const nextIndex = clamp(index + delta, 0, ids.length - 1);
+    if (nextIndex === index) return prev;
+    const nextIds = arrayMove(ids, index, nextIndex);
+    return reorderFeaturesByPhase(prev, feature.phaseId, nextIds, id);
+  });
 }
 
 function NewFeatureButton() {
@@ -4257,6 +4337,18 @@ useEffect(() => {
   const projectPickerProject = projectColorPicker.projectId
     ? projects.find((p) => p.id === projectColorPicker.projectId) ?? null
     : null;
+  const ctxMenuFeatureId = ctxMenu.open && ctxMenu.target.kind === 'feature' ? ctxMenu.target.id : null;
+  const ctxMenuFeature = ctxMenuFeatureId ? doc.features.find((f) => f.id === ctxMenuFeatureId) ?? null : null;
+  const ctxMenuFeaturePhaseIds = ctxMenuFeature
+    ? doc.features
+        .filter((f) => f.phaseId === ctxMenuFeature.phaseId)
+        .sort((a, b) => a.order - b.order)
+        .map((f) => f.id)
+    : [];
+  const ctxMenuFeatureIndex = ctxMenuFeature ? ctxMenuFeaturePhaseIds.indexOf(ctxMenuFeature.id) : -1;
+  const canMoveCtxFeatureUp = ctxMenuFeatureIndex > 0;
+  const canMoveCtxFeatureDown =
+    ctxMenuFeatureIndex >= 0 && ctxMenuFeatureIndex < ctxMenuFeaturePhaseIds.length - 1;
   const closeMobileSidebar = () => {
     if (isMobile) setMobileSidebarOpen(false);
   };
@@ -6052,7 +6144,7 @@ useEffect(() => {
           >
             <div style={{ padding: 12, borderBottom: `1px solid ${themeVars.divider}` }}>
               <input
-                autoFocus
+                autoFocus={!isMobile}
                 value={paletteQuery}
                 onChange={(e) => {
                   setPaletteQuery(e.target.value);
@@ -6068,7 +6160,7 @@ useEffect(() => {
                   color: 'inherit',
                   outline: 'none',
                   fontWeight: 850,
-                  fontSize: 13,
+                  fontSize: isMobile ? 16 : 13,
                 }}
               />
             </div>
@@ -6701,6 +6793,51 @@ useEffect(() => {
                   type="button"
                   onClick={() => {
                     if (ctxMenu.target.kind !== 'feature') return;
+                    if (editingDisabled || !canMoveCtxFeatureUp) return;
+                    moveFeatureWithinPhase(ctxMenu.target.id, -1);
+                    closeCtxMenu();
+                  }}
+                  disabled={editingDisabled || !canMoveCtxFeatureUp}
+                  style={{
+                    textAlign: 'left',
+                    padding: '8px 10px',
+                    background: 'transparent',
+                    color: 'inherit',
+                    border: 'none',
+                    borderRadius: 8,
+                    cursor: editingDisabled || !canMoveCtxFeatureUp ? 'not-allowed' : 'pointer',
+                    opacity: editingDisabled || !canMoveCtxFeatureUp ? 0.5 : 1,
+                  }}
+                >
+                  Move up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (ctxMenu.target.kind !== 'feature') return;
+                    if (editingDisabled || !canMoveCtxFeatureDown) return;
+                    moveFeatureWithinPhase(ctxMenu.target.id, 1);
+                    closeCtxMenu();
+                  }}
+                  disabled={editingDisabled || !canMoveCtxFeatureDown}
+                  style={{
+                    textAlign: 'left',
+                    padding: '8px 10px',
+                    background: 'transparent',
+                    color: 'inherit',
+                    border: 'none',
+                    borderRadius: 8,
+                    cursor: editingDisabled || !canMoveCtxFeatureDown ? 'not-allowed' : 'pointer',
+                    opacity: editingDisabled || !canMoveCtxFeatureDown ? 0.5 : 1,
+                  }}
+                >
+                  Move down
+                </button>
+                <div style={{ height: 1, margin: '2px 2px', background: themeVars.divider }} />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (ctxMenu.target.kind !== 'feature') return;
                     if (editingDisabled) return;
                     const id = ctxMenu.target.id;
                     openEditor(id);
@@ -6802,10 +6939,10 @@ useEffect(() => {
             inset: 0,
             background: themeVars.overlay,
             display: 'flex',
-            alignItems: isMobile ? 'stretch' : 'center',
+            alignItems: isMobile ? 'flex-start' : 'center',
             justifyContent: 'center',
-            zIndex: 1000,
-            padding: isMobile ? 10 : 16,
+            zIndex: 10100,
+            padding: isMobile ? `${mobileTopPad} 10px calc(env(safe-area-inset-bottom, 0px) + 10px)` : 16,
           }}
         >
           <div
@@ -6818,7 +6955,7 @@ useEffect(() => {
               minWidth: isMobile ? 0 : 380,
               width: isMobile ? '100%' : undefined,
               maxWidth: isMobile ? '100%' : 'min(560px, 100%)',
-              maxHeight: isMobile ? Math.max(280, viewportHeight - 20) : 'unset',
+              maxHeight: isMobile ? '100%' : 'unset',
               overflowY: isMobile ? 'auto' : 'visible',
               boxShadow: themeVars.shadow3,
               border: `1px solid ${themeVars.border}`,
