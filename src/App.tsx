@@ -615,7 +615,7 @@ const InlineRichField = memo(function InlineRichField({
   const empty = prdHtmlIsEmpty(html);
 
   return (
-    <div style={{ position: 'relative', marginTop: 10 }}>
+    <div style={{ position: 'relative', marginTop: 8 }}>
       <div
         ref={elRef}
         className="prd-rich"
@@ -648,6 +648,10 @@ const InlineRichField = memo(function InlineRichField({
           fontSize: 14,
           lineHeight: 1.55,
           minHeight: 130,
+          maxHeight: 'clamp(200px, calc(100dvh - 300px), 700px)',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          overscrollBehavior: 'contain',
           whiteSpace: 'normal',
         }}
       />
@@ -701,7 +705,7 @@ const PrdToolbar = memo(function PrdToolbar({
     <div
       className={className}
       style={{
-        marginTop: 10,
+        marginTop: 6,
         display: 'flex',
         alignItems: 'center',
         gap: 8,
@@ -1100,6 +1104,7 @@ export default function App() {
     open: boolean;
     projectId: string | null;
   }>({ open: false, projectId: null });
+  const [projectRenameDraft, setProjectRenameDraft] = useState('');
   const projectImportRef = useRef<HTMLInputElement | null>(null);
   const [projectImportTargetId, setProjectImportTargetId] = useState<string | null>(null);
   const [prdHistoryByProject, setPrdHistoryByProject] = useState<
@@ -3912,6 +3917,49 @@ useEffect(() => {
       projectImportRef.current.click();
     }
   };
+  const renameProjectById = (projectId: string, nextNameRaw: string) => {
+    if (editingDisabled) return;
+    const nextName = nextNameRaw.trim();
+    if (!nextName) return;
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== projectId) return p;
+        const currentName = getPrdTitle(p.prd) || p.doc.title || '';
+        if (currentName === nextName) return p;
+        return {
+          ...p,
+          doc: p.doc.title === nextName ? p.doc : { ...p.doc, title: nextName },
+          prd: setPrdTitle(p.prd, nextName),
+          lastEdited: now(),
+        };
+      })
+    );
+  };
+  const openProjectSettings = (projectId: string) => {
+    if (editingDisabled) return;
+    const project = projects.find((p) => p.id === projectId);
+    const projectName = project ? getPrdTitle(project.prd) || project.doc.title || 'Untitled project' : '';
+    resetDeleteHold();
+    setProjectRenameDraft(projectName);
+    setProjectColorPicker({ open: true, projectId });
+  };
+  const closeProjectSettings = () => {
+    resetDeleteHold();
+    setProjectColorPicker({ open: false, projectId: null });
+    setProjectRenameDraft('');
+  };
+  const commitProjectRename = () => {
+    if (editingDisabled) return;
+    if (!projectColorPicker.projectId) return;
+    const nextName = projectRenameDraft.trim();
+    if (!nextName) {
+      const currentProject = projects.find((p) => p.id === projectColorPicker.projectId);
+      setProjectRenameDraft(currentProject ? getPrdTitle(currentProject.prd) || currentProject.doc.title || '' : '');
+      return;
+    }
+    renameProjectById(projectColorPicker.projectId, nextName);
+    setProjectRenameDraft(nextName);
+  };
   const clonePrd = (value: PrdDoc) =>
     JSON.parse(JSON.stringify(value)) as PrdDoc;
   const updatePrdWithHistory = (updater: (prev: PrdDoc) => PrdDoc) => {
@@ -3996,8 +4044,7 @@ useEffect(() => {
       setPhaseFilter('all');
       setStatusFilter(new Set(ALL_STATUSES));
       setTagQuery('');
-      setProjectColorPicker({ open: false, projectId: null });
-      resetDeleteHold();
+      closeProjectSettings();
     }, DELETE_HOLD_MS);
   };
   const cancelDeleteHold = () => {
@@ -4018,6 +4065,9 @@ useEffect(() => {
         ? Math.max(MENU_MARGIN, ctxMenu.y - ctxMenuHeight)
         : ctxMenu.y
       : ctxMenu.y;
+  const projectPickerProject = projectColorPicker.projectId
+    ? projects.find((p) => p.id === projectColorPicker.projectId) ?? null
+    : null;
 
   return (
     <div style={{ ...shellStyle, ['--prdLink' as any]: isLight ? 'rgba(30,120,255,0.92)' : 'rgba(120,200,255,0.95)' }}>
@@ -4068,8 +4118,7 @@ useEffect(() => {
                 tabIndex={0}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  if (editingDisabled) return;
-                  setProjectColorPicker({ open: true, projectId: project.id });
+                  openProjectSettings(project.id);
                 }}
                 onClick={() => {
                   if (project.id === activeProjectId) return;
@@ -4107,6 +4156,7 @@ useEffect(() => {
                   border: `1px solid ${borderColor}`,
                   background,
                   padding: isActive ? 10 : 8,
+                  position: 'relative',
                   cursor: 'pointer',
                   opacity: isActive ? 1 : 0.82,
                   transition: 'opacity 140ms ease, transform 140ms ease',
@@ -4119,31 +4169,60 @@ useEffect(() => {
                 <div
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    fontWeight: 900,
-                    fontSize: isActive ? 12 : 11,
-                    letterSpacing: 0.1,
-                    color: themeVars.appText,
-                    whiteSpace: 'normal',
-                    overflowWrap: 'anywhere',
-                    wordBreak: 'break-word',
+                    alignItems: 'flex-start',
+                    justifyContent: 'space-between',
+                    gap: 8,
                   }}
                 >
-                  {color ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontWeight: 900,
+                      fontSize: isActive ? 12 : 11,
+                      letterSpacing: 0.1,
+                      color: themeVars.appText,
+                      whiteSpace: 'normal',
+                      overflowWrap: 'anywhere',
+                      wordBreak: 'break-word',
+                    }}
+                  >
+                    {color ? (
+                      <span
+                        aria-hidden
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 999,
+                          background: color.swatch,
+                          boxShadow: `0 0 0 2px ${color.bg}`,
+                          flexShrink: 0,
+                        }}
+                      />
+                    ) : null}
+                    {projectName}
+                  </div>
+                  {isActive ? (
                     <span
-                      aria-hidden
                       style={{
-                        width: 8,
-                        height: 8,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '1px 6px',
                         borderRadius: 999,
-                        background: color.swatch,
-                        boxShadow: `0 0 0 2px ${color.bg}`,
+                        border: `1px solid ${isLight ? 'rgba(30,120,255,0.35)' : 'rgba(120,200,255,0.4)'}`,
+                        background: isLight ? 'rgba(30,120,255,0.14)' : 'rgba(120,200,255,0.14)',
+                        color: isLight ? 'rgba(18,88,180,0.98)' : 'rgba(180,225,255,0.96)',
+                        fontSize: 10,
+                        fontWeight: 900,
+                        letterSpacing: 0.3,
+                        textTransform: 'uppercase',
                         flexShrink: 0,
                       }}
-                    />
+                    >
+                      Active
+                    </span>
                   ) : null}
-                  {projectName}
                 </div>
                 <div style={{ fontSize: 11, opacity: 0.7 }}>{stats}</div>
                 {isActive ? (
@@ -4569,10 +4648,10 @@ useEffect(() => {
               minHeight: 0,
               overflowX: 'auto',
               overflowY: 'hidden',
-              paddingTop: 16,
+              paddingTop: 10,
               paddingLeft: 18,
               paddingRight: 12,
-              paddingBottom: 22,
+              paddingBottom: 14,
             }}
           >
             <div
@@ -4603,7 +4682,7 @@ useEffect(() => {
                       border: `1px solid ${themeVars.border}`,
                       background: themeVars.panelBg2,
                       boxShadow: themeVars.shadow1,
-                      padding: 12,
+                      padding: 10,
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -4713,7 +4792,7 @@ useEffect(() => {
                       </div>
                     </div>
 
-                    <div style={{ marginTop: 10 }}>
+                    <div style={{ marginTop: 6 }}>
                       <PrdToolbar
                         visible={toolbarVisible}
                         alwaysVisible
@@ -4852,7 +4931,7 @@ useEffect(() => {
                       border: `1px solid ${themeVars.border}`,
                       background: themeVars.panelBg2,
                       boxShadow: themeVars.shadow1,
-                      padding: 12,
+                      padding: 10,
                     }}
                   >
                     {b.type === 'title' ? (
@@ -5708,9 +5787,9 @@ useEffect(() => {
           </div>
         </div>
       ) : null}
-      {projectColorPicker.open && projectColorPicker.projectId ? (
+      {projectColorPicker.open && projectPickerProject ? (
         <div
-          onMouseDown={() => setProjectColorPicker({ open: false, projectId: null })}
+          onMouseDown={() => closeProjectSettings()}
           style={{
             position: 'fixed',
             inset: 0,
@@ -5738,13 +5817,10 @@ useEffect(() => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: 16, fontWeight: 900 }}>Project color</div>
+              <div style={{ fontSize: 16, fontWeight: 900 }}>Project settings</div>
               <button
                 type="button"
-                onClick={() => {
-                  resetDeleteHold();
-                  setProjectColorPicker({ open: false, projectId: null });
-                }}
+                onClick={() => closeProjectSettings()}
                 style={{
                   padding: '4px 8px',
                   borderRadius: 999,
@@ -5759,6 +5835,58 @@ useEffect(() => {
                 Done
               </button>
             </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <div style={{ fontSize: 12, color: themeVars.muted }}>Project name</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  value={projectRenameDraft}
+                  onChange={(e) => setProjectRenameDraft(e.target.value)}
+                  onBlur={() => commitProjectRename()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      commitProjectRename();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setProjectRenameDraft(getPrdTitle(projectPickerProject.prd) || projectPickerProject.doc.title || '');
+                    }
+                  }}
+                  readOnly={editingDisabled}
+                  placeholder="Untitled project"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: `1px solid ${themeVars.border}`,
+                    background: themeVars.inputBg2,
+                    color: themeVars.appText,
+                    outline: 'none',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    ...(editingDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : null),
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => commitProjectRename()}
+                  disabled={editingDisabled || !projectRenameDraft.trim()}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: `1px solid ${themeVars.border}`,
+                    background: themeVars.panelBg2,
+                    color: 'inherit',
+                    cursor: editingDisabled || !projectRenameDraft.trim() ? 'not-allowed' : 'pointer',
+                    fontWeight: 800,
+                    fontSize: 12,
+                    opacity: editingDisabled || !projectRenameDraft.trim() ? 0.6 : 1,
+                  }}
+                >
+                  Rename
+                </button>
+              </div>
+            </div>
             <div style={{ fontSize: 12, color: themeVars.muted }}>
               Pick a color to personalize this project.
             </div>
@@ -5770,8 +5898,7 @@ useEffect(() => {
               }}
             >
               {PROJECT_COLORS.map((c) => {
-                const isSelected =
-                  projects.find((p) => p.id === projectColorPicker.projectId)?.colorId === c.id;
+                const isSelected = projectPickerProject.colorId === c.id;
                 return (
                   <button
                     key={c.id}
@@ -5780,7 +5907,7 @@ useEffect(() => {
                       if (editingDisabled) return;
                       setProjects((prev) =>
                         prev.map((p) =>
-                          p.id === projectColorPicker.projectId
+                          p.id === projectPickerProject.id
                             ? { ...p, colorId: c.id, lastEdited: now() }
                             : p
                         )
@@ -5825,7 +5952,7 @@ useEffect(() => {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
                 type="button"
-                onClick={() => exportProject(projects.find((p) => p.id === projectColorPicker.projectId)!)}
+                onClick={() => exportProject(projectPickerProject)}
                 style={{
                   padding: '8px 10px',
                   borderRadius: 10,
@@ -5841,7 +5968,7 @@ useEffect(() => {
               </button>
               <button
                 type="button"
-                onClick={() => triggerProjectImport(projectColorPicker.projectId!)}
+                onClick={() => triggerProjectImport(projectPickerProject.id)}
                 disabled={editingDisabled}
                 style={{
                   padding: '8px 10px',
@@ -5866,7 +5993,7 @@ useEffect(() => {
             <div style={{ fontSize: 12, fontWeight: 800, color: themeVars.muted }}>Danger zone</div>
             <button
               type="button"
-              onPointerDown={() => startDeleteHold(projectColorPicker.projectId!)}
+              onPointerDown={() => startDeleteHold(projectPickerProject.id)}
               onPointerUp={cancelDeleteHold}
               onPointerLeave={cancelDeleteHold}
               onPointerCancel={cancelDeleteHold}
@@ -5876,9 +6003,9 @@ useEffect(() => {
                 overflow: 'hidden',
                 padding: '10px 12px',
                 borderRadius: 12,
-                border: `1px solid rgba(255,99,99,0.5)`,
-                background: 'rgba(255,99,99,0.12)',
-                color: 'rgba(255,210,210,0.95)',
+                border: `1px solid ${isLight ? 'rgba(175,32,56,0.45)' : 'rgba(255,99,99,0.5)'}`,
+                background: isLight ? 'rgba(214,56,82,0.12)' : 'rgba(255,99,99,0.12)',
+                color: isLight ? 'rgba(122,20,38,0.95)' : 'rgba(255,210,210,0.95)',
                 cursor: editingDisabled || projects.length <= 1 ? 'not-allowed' : 'pointer',
                 fontWeight: 800,
                 fontSize: 12,
@@ -5896,7 +6023,7 @@ useEffect(() => {
                   position: 'absolute',
                   inset: 0,
                   width: `${Math.round(deleteHoldProgress * 100)}%`,
-                  background: 'rgba(255,99,99,0.28)',
+                  background: isLight ? 'rgba(214,56,82,0.2)' : 'rgba(255,99,99,0.28)',
                   transition: deleteHoldProgress === 0 ? 'none' : 'width 80ms linear',
                 }}
               />
