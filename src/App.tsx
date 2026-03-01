@@ -576,6 +576,26 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+type ViewportSize = {
+  width: number;
+  height: number;
+};
+
+function readViewportSize(): ViewportSize {
+  if (typeof window === 'undefined') return { width: 0, height: 0 };
+  const vv = window.visualViewport;
+  if (vv) {
+    return {
+      width: Math.max(0, Math.round(vv.width)),
+      height: Math.max(0, Math.round(vv.height)),
+    };
+  }
+  return {
+    width: Math.max(0, Math.round(window.innerWidth)),
+    height: Math.max(0, Math.round(window.innerHeight)),
+  };
+}
+
 type InlineRichFieldProps = {
   blockId: string;
   html: string;
@@ -1124,6 +1144,7 @@ export default function App() {
   const [isMobile, setIsMobile] = useState<boolean>(
     () => (typeof window !== 'undefined' ? window.innerWidth <= MOBILE_BREAKPOINT : false)
   );
+  const [viewportSize, setViewportSize] = useState<ViewportSize>(() => readViewportSize());
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -1131,15 +1152,30 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    let raf = 0;
+    const syncViewport = () => {
+      const nextIsMobile = window.innerWidth <= MOBILE_BREAKPOINT;
+      const nextViewport = readViewportSize();
+      setIsMobile((prev) => (prev === nextIsMobile ? prev : nextIsMobile));
+      setViewportSize((prev) =>
+        prev.width === nextViewport.width && prev.height === nextViewport.height ? prev : nextViewport
+      );
+    };
     const onResize = () => {
-      setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(syncViewport);
     };
     onResize();
     window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
     window.visualViewport?.addEventListener('resize', onResize);
+    window.visualViewport?.addEventListener('scroll', onResize);
     return () => {
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
       window.visualViewport?.removeEventListener('resize', onResize);
+      window.visualViewport?.removeEventListener('scroll', onResize);
+      cancelAnimationFrame(raf);
     };
   }, []);
 
@@ -3514,6 +3550,7 @@ useEffect(() => {
   useEffect(() => {
     const root = scrollRootRef.current;
     if (!root) return;
+    if (isMobile) return;
 
     let raf = 0;
 
@@ -3533,7 +3570,7 @@ useEffect(() => {
       window.visualViewport?.removeEventListener('resize', onResize);
       cancelAnimationFrame(raf);
     };
-  }, [activeSection]);
+  }, [activeSection, isMobile]);
 
   useEffect(() => {
     const fromHash = sectionFromHash();
@@ -3627,6 +3664,22 @@ useEffect(() => {
 
     return theme === 'light' ? light : dark;
   }, [theme]);
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const rootEl = document.documentElement;
+    rootEl.style.setProperty('--app-bg', themeVars.appBg);
+    rootEl.style.backgroundColor = themeVars.appBg;
+    document.body.style.backgroundColor = themeVars.appBg;
+    const rootNode = document.getElementById('root');
+    if (rootNode) rootNode.style.backgroundColor = themeVars.appBg;
+    let themeColorMeta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null;
+    if (!themeColorMeta) {
+      themeColorMeta = document.createElement('meta');
+      themeColorMeta.setAttribute('name', 'theme-color');
+      document.head.appendChild(themeColorMeta);
+    }
+    themeColorMeta.setAttribute('content', themeVars.appBg);
+  }, [themeVars.appBg]);
   const isLight = theme === 'light';
   const logoSrc = isLight
     ? new URL('../images/workshop_logo.png', import.meta.url).href
@@ -3731,20 +3784,14 @@ useEffect(() => {
     fontWeight: 700,
     cursor: 'pointer',
   };
-  const mobileTopBarPill: React.CSSProperties = {
-    height: 38,
-    borderRadius: 12,
-    border: `1px solid ${themeVars.border}`,
-    background: themeVars.panelBgStrong,
-    boxShadow: themeVars.shadow1,
-    display: 'inline-flex',
-    alignItems: 'center',
-  };
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const sidebarVisible = !isMobile || mobileSidebarOpen;
+  const MOBILE_TOP_CHROME_OFFSET = 56;
+  const mobileTopPad = `calc(env(safe-area-inset-top, 0px) + ${MOBILE_TOP_CHROME_OFFSET}px)`;
+  const mobileViewportHeight = Math.max(320, viewportSize.height || 0);
   const shellStyle: React.CSSProperties = {
-    height: '100dvh',
-    minHeight: '100dvh',
+    height: isMobile ? mobileViewportHeight : '100dvh',
+    minHeight: isMobile ? mobileViewportHeight : '100dvh',
     width: '100%',
     overflow: 'hidden',
     display: 'grid',
@@ -3774,7 +3821,7 @@ useEffect(() => {
           zIndex: 10060,
           transform: mobileSidebarOpen ? 'translateX(0)' : 'translateX(-102%)',
           transition: reducedMotion ? 'none' : 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1)',
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 56px)',
+          paddingTop: mobileTopPad,
           paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)',
           boxShadow: themeVars.shadow3,
           pointerEvents: mobileSidebarOpen ? 'auto' : 'none',
@@ -3803,14 +3850,14 @@ useEffect(() => {
     overflowX: 'hidden',
     scrollBehavior: reducedMotion ? 'auto' : 'smooth',
     scrollSnapType: 'y mandatory',
-    scrollPaddingTop: isMobile ? 62 : 0,
+    scrollPaddingTop: 0,
   };
 
   const sectionStyle: React.CSSProperties = {
     height: '100%',
     maxHeight: '100%',
     minHeight: 0,
-    padding: isMobile ? '62px 14px 14px' : 14,
+    padding: isMobile ? `${mobileTopPad} 14px 14px` : 14,
     boxSizing: 'border-box',
     overflow: 'hidden',
     display: 'flex',
@@ -3821,7 +3868,7 @@ useEffect(() => {
   };
   const roadmapSectionStyle: React.CSSProperties = {
     ...sectionStyle,
-    padding: isMobile ? '56px 0 0' : 0,
+    padding: isMobile ? `${mobileTopPad} 0 0` : 0,
     background: isLight ? '#ffffff' : 'transparent',
   };
   const PRD_COL_W = 520;
@@ -4169,8 +4216,8 @@ useEffect(() => {
   const MENU_MARGIN = 8;
   const ctxMenuWidth = ctxMenuSize.width || 180;
   const ctxMenuHeight = ctxMenuSize.height || 160;
-  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 0;
-  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 0;
+  const viewportWidth = viewportSize.width;
+  const viewportHeight = viewportSize.height;
   const ctxMenuLeft =
     viewportWidth > 0
       ? Math.max(MENU_MARGIN, Math.min(ctxMenu.x, viewportWidth - ctxMenuWidth - MENU_MARGIN))
@@ -4233,7 +4280,7 @@ useEffect(() => {
             position: 'fixed',
             top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
             left: 12,
-            zIndex: 900,
+            zIndex: 10070,
             display: 'flex',
             alignItems: 'center',
             gap: 8,
@@ -4244,17 +4291,22 @@ useEffect(() => {
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setMobileSidebarOpen((prev) => !prev)}
             style={{
-              ...mobileTopBarPill,
               width: 38,
+              height: 38,
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
               fontWeight: 900,
               fontSize: 16,
             }}
-            aria-label={sidebarVisible ? 'Close menu' : 'Open menu'}
-            title={sidebarVisible ? 'Close menu' : 'Open menu'}
+            aria-label={mobileSidebarOpen ? 'Close menu' : 'Open menu'}
+            title={mobileSidebarOpen ? 'Close menu' : 'Open menu'}
           >
-            {sidebarVisible ? (
+            {mobileSidebarOpen ? (
               <span aria-hidden style={{ position: 'relative', width: 14, height: 14, display: 'inline-block' }}>
                 <span
                   style={{
@@ -6766,7 +6818,7 @@ useEffect(() => {
               minWidth: isMobile ? 0 : 380,
               width: isMobile ? '100%' : undefined,
               maxWidth: isMobile ? '100%' : 'min(560px, 100%)',
-              maxHeight: isMobile ? 'calc(100dvh - 20px)' : 'unset',
+              maxHeight: isMobile ? Math.max(280, viewportHeight - 20) : 'unset',
               overflowY: isMobile ? 'auto' : 'visible',
               boxShadow: themeVars.shadow3,
               border: `1px solid ${themeVars.border}`,
