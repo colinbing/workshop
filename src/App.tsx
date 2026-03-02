@@ -6226,10 +6226,10 @@ useEffect(() => {
             inset: 0,
             background: themeVars.overlay,
             display: 'flex',
-            alignItems: 'center',
+            alignItems: isMobile ? 'flex-start' : 'center',
             justifyContent: 'center',
             zIndex: 10120,
-            padding: 16,
+            padding: isMobile ? `${mobileTopPad} 10px calc(env(safe-area-inset-bottom, 0px) + 10px)` : 16,
           }}
         >
           <div
@@ -6238,9 +6238,12 @@ useEffect(() => {
               background: themeVars.panelBgStrong,
               color: themeVars.appText,
               borderRadius: 12,
-              padding: 20,
-              minWidth: 340,
-              maxWidth: 'min(520px, 100%)',
+              padding: isMobile ? 14 : 20,
+              minWidth: isMobile ? 0 : 340,
+              width: isMobile ? '100%' : undefined,
+              maxWidth: isMobile ? '100%' : 'min(520px, 100%)',
+              maxHeight: isMobile ? Math.max(220, Math.round(viewportHeight * 0.5)) : 'unset',
+              overflowY: isMobile ? 'auto' : 'visible',
               boxShadow: themeVars.shadow3,
               border: `1px solid ${themeVars.border}`,
               display: 'grid',
@@ -6251,7 +6254,7 @@ useEffect(() => {
             <div style={{ display: 'grid', gap: 8 }}>
               <label style={{ fontSize: 13, opacity: 0.8 }}>Project name</label>
               <input
-                autoFocus
+                autoFocus={!isMobile}
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
                 placeholder="New project"
@@ -6262,7 +6265,7 @@ useEffect(() => {
                   background: themeVars.inputBg2,
                   color: 'inherit',
                   outline: 'none',
-                  fontSize: 14,
+                  fontSize: 16,
                 }}
               />
             </div>
