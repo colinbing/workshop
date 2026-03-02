@@ -3796,6 +3796,17 @@ useEffect(() => {
     color: 'inherit',
     outline: 'none',
   };
+  const phaseFilterSelectStyle: React.CSSProperties = {
+    ...inputStyle,
+    appearance: 'none',
+    WebkitAppearance: 'none',
+    MozAppearance: 'none',
+    paddingRight: 34,
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3.25 5.5L7 9.25L10.75 5.5' stroke='${isLight ? '%23213B54' : '%23DCEBFF'}' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 10px center',
+    backgroundSize: '14px 14px',
+  };
 
   const buttonStyle: React.CSSProperties = {
     padding: '8px 12px',
@@ -4154,6 +4165,7 @@ useEffect(() => {
   };
   const triggerProjectImport = (projectId: string) => {
     if (editingDisabled) return;
+    if (isMobile) setMobileSidebarOpen(false);
     setProjectImportTargetId(projectId);
     if (projectImportRef.current) {
       projectImportRef.current.value = '';
@@ -4180,6 +4192,7 @@ useEffect(() => {
   };
   const openProjectSettings = (projectId: string) => {
     if (editingDisabled) return;
+    if (isMobile) setMobileSidebarOpen(false);
     const project = projects.find((p) => p.id === projectId);
     const projectName = project ? getPrdTitle(project.prd) || project.doc.title || 'Untitled project' : '';
     resetDeleteHold();
@@ -4671,6 +4684,7 @@ useEffect(() => {
                 type="button"
                 onClick={() => {
                   if (editingDisabled) return;
+                  if (isMobile) setMobileSidebarOpen(false);
                   setNewProjectName('');
                   setIsProjectModalOpen(true);
                 }}
@@ -5757,7 +5771,7 @@ useEffect(() => {
                       <select
                         value={phaseFilter}
                         onChange={(e) => setPhaseFilter(e.target.value)}
-                        style={{ ...inputStyle, width: '100%' }}
+                        style={{ ...phaseFilterSelectStyle, width: '100%' }}
                         aria-label="Phase filter"
                       >
                         <option value="all">All phases</option>
@@ -5808,7 +5822,7 @@ useEffect(() => {
                       <select
                         value={phaseFilter}
                         onChange={(e) => setPhaseFilter(e.target.value)}
-                        style={{ ...inputStyle, width: 200 }}
+                        style={{ ...phaseFilterSelectStyle, width: 200 }}
                         aria-label="Phase filter"
                       >
                         <option value="all">All phases</option>
@@ -6214,7 +6228,7 @@ useEffect(() => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 10030,
+            zIndex: 10120,
             padding: 16,
           }}
         >
@@ -6329,7 +6343,7 @@ useEffect(() => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 10030,
+            zIndex: 10120,
             padding: 16,
           }}
         >
