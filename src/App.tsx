@@ -634,6 +634,7 @@ type InlineRichFieldProps = {
   onChangeHtml: (nextHtml: string) => void;
   placeholder: string;
   readOnly?: boolean;
+  editorStyle?: React.CSSProperties;
   themeVars: {
     border: string;
     inputBg: string;
@@ -649,6 +650,7 @@ const InlineRichField = memo(function InlineRichField({
   onChangeHtml,
   placeholder,
   readOnly = false,
+  editorStyle,
   themeVars,
   onFocusBlock,
   onBlurBlock,
@@ -705,6 +707,7 @@ const InlineRichField = memo(function InlineRichField({
           overflowX: 'hidden',
           overscrollBehavior: 'contain',
           whiteSpace: 'normal',
+          ...editorStyle,
         }}
       />
 
@@ -731,6 +734,7 @@ const InlineRichField = memo(function InlineRichField({
 type PrdToolbarProps = {
   visible: boolean;
   alwaysVisible?: boolean;
+  isMobile?: boolean;
   className?: string;
   onCmd: (cmd: string, val?: string) => void;
   onLink: () => void;
@@ -745,6 +749,7 @@ type PrdToolbarProps = {
 const PrdToolbar = memo(function PrdToolbar({
   visible,
   alwaysVisible = false,
+  isMobile = false,
   className,
   onCmd,
   onLink,
@@ -760,12 +765,13 @@ const PrdToolbar = memo(function PrdToolbar({
         marginTop: 6,
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        flexWrap: 'wrap',
-        overflow: 'hidden',
+        gap: isMobile ? 6 : 8,
+        flexWrap: isMobile ? 'nowrap' : 'wrap',
+        overflowX: isMobile ? 'auto' : 'hidden',
+        overflowY: 'hidden',
         WebkitOverflowScrolling: 'touch',
         paddingBottom: 4,
-        padding: 8,
+        padding: isMobile ? 6 : 8,
         width: '100%',
         maxWidth: '100%',
         minWidth: 0,
@@ -773,7 +779,7 @@ const PrdToolbar = memo(function PrdToolbar({
         borderRadius: 14,
         border: `1px solid ${themeVars.border}`,
         background: themeVars.panelBg2,
-        minHeight: 40,
+        minHeight: isMobile ? 34 : 40,
         opacity: isVisible ? 1 : 0,
         pointerEvents: isVisible ? 'auto' : 'none',
         transform: isVisible ? 'translateY(0)' : 'translateY(-2px)',
@@ -1300,6 +1306,7 @@ export default function App() {
   const [activeSection, setActiveSection] = useState<DocSection>('roadmap');
   const [prdMode, setPrdMode] = useState<'view' | 'editTemplate'>('view');
   const [prdInlineEditId, setPrdInlineEditId] = useState<string | null>(null);
+  const [prdMobileEditId, setPrdMobileEditId] = useState<string | null>(null);
   const prdActiveRef = useRef<HTMLDivElement | null>(null);
   const [prdHoverId, setPrdHoverId] = useState<string | null>(null);
   const [prdFocusId, setPrdFocusId] = useState<string | null>(null);
@@ -2518,6 +2525,10 @@ export default function App() {
     () => prdBlocksSorted.filter((b) => b.type !== 'title'),
     [prdBlocksSorted]
   );
+  const prdMobileEditingBlock = useMemo(
+    () => (prdMobileEditId ? prdBlocksSorted.find((b) => b.id === prdMobileEditId) ?? null : null),
+    [prdBlocksSorted, prdMobileEditId]
+  );
 
   const orderedFeatures = useMemo(() => {
     return [...doc.features].sort((a, b) => a.order - b.order);
@@ -3184,6 +3195,26 @@ function cancelInlinePhaseEdit() {
     }));
   }
 
+  function openPrdBlockEditor(blockId: string) {
+    if (editingDisabled) return;
+    if (isMobile) {
+      setPrdInlineEditId(null);
+      setPrdMobileEditId(blockId);
+      return;
+    }
+    setPrdInlineEditId(blockId);
+  }
+
+  function closePrdMobileEditor() {
+    if (!prdMobileEditId) return;
+    const field = document.querySelector(`[data-prd-field="${prdMobileEditId}"]`) as HTMLDivElement | null;
+    if (field) {
+      commitPrdBlock(prdMobileEditId, field.innerHTML);
+    }
+    setPrdFocusId(null);
+    setPrdMobileEditId(null);
+  }
+
 function addPrdBlockAfter(afterId: string) {
   if (editingDisabled) return;
   updatePrdWithHistory((prev) => {
@@ -3545,6 +3576,14 @@ useEffect(() => {
   }, [prdInlineEditId]);
 
   useEffect(() => {
+    if (!prdMobileEditId) return;
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-prd-field="${prdMobileEditId}"]`) as HTMLDivElement | null;
+      el?.focus();
+    });
+  }, [prdMobileEditId]);
+
+  useEffect(() => {
     if (!prdInlineEditId) return;
     const onMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
@@ -3558,6 +3597,16 @@ useEffect(() => {
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [prdInlineEditId]);
+
+  useEffect(() => {
+    if (!isMobile && prdMobileEditId) setPrdMobileEditId(null);
+  }, [isMobile, prdMobileEditId]);
+
+  useEffect(() => {
+    if (!prdMobileEditId) return;
+    if (prd.blocks.some((b) => b.id === prdMobileEditId)) return;
+    setPrdMobileEditId(null);
+  }, [prd.blocks, prdMobileEditId]);
 
   useEffect(() => {
     if (!detailsOpen) return;
@@ -4026,6 +4075,14 @@ useEffect(() => {
     whiteSpace: 'nowrap',
     lineHeight: 1,
     flexShrink: 0,
+  };
+  const prdToolBtnMobile: React.CSSProperties = {
+    ...prdToolBtn,
+    height: 28,
+    minWidth: 28,
+    padding: '0 9px',
+    borderRadius: 9,
+    fontSize: 11,
   };
   const prdActionBtn: React.CSSProperties = {
     padding: '6px 10px',
@@ -5066,7 +5123,10 @@ useEffect(() => {
                   if (editingDisabled) return;
                   setPrdMode((m) => {
                     const next = m === 'editTemplate' ? 'view' : 'editTemplate';
-                    if (next === 'editTemplate') setPrdInlineEditId(null);
+                    if (next === 'editTemplate') {
+                      setPrdInlineEditId(null);
+                      setPrdMobileEditId(null);
+                    }
                     return next;
                   });
                 }}
@@ -5323,10 +5383,11 @@ useEffect(() => {
                       <PrdToolbar
                         visible={toolbarVisible}
                         alwaysVisible
+                        isMobile={isMobile}
                         className="prd-toolbar"
                         onCmd={prdCmd}
                         onLink={prdLink}
-                        toolBtnStyle={prdToolBtn}
+                        toolBtnStyle={isMobile ? prdToolBtnMobile : prdToolBtn}
                         themeVars={themeVars}
                       />
 
@@ -5348,7 +5409,7 @@ useEffect(() => {
                       />
                     </div>
                   </div>
-                ) : !isInlineEditing ? (
+                ) : !isInlineEditing || isMobile ? (
                   <div
                     key={b.id}
                     style={{
@@ -5375,14 +5436,14 @@ useEffect(() => {
                           <button
                             type="button"
                             onClick={() => {
-                              if (editingDisabled) return;
-                              setPrdInlineEditId(b.id);
+                              openPrdBlockEditor(b.id);
                             }}
                             disabled={editingDisabled}
                             style={{
                               ...prdPencilBtnStyle,
-                              opacity: prdHoverId === b.id ? (editingDisabled ? 0.4 : 1) : 0,
-                              pointerEvents: prdHoverId === b.id && !editingDisabled ? 'auto' : 'none',
+                              opacity: isMobile ? (editingDisabled ? 0.45 : 1) : prdHoverId === b.id ? (editingDisabled ? 0.4 : 1) : 0,
+                              pointerEvents:
+                                isMobile || (prdHoverId === b.id && !editingDisabled) ? 'auto' : 'none',
                               cursor: editingDisabled ? 'not-allowed' : 'pointer',
                               border: `1px solid ${themeVars.border}`,
                               background: themeVars.panelBg3,
@@ -5403,14 +5464,14 @@ useEffect(() => {
                           <button
                             type="button"
                             onClick={() => {
-                              if (editingDisabled) return;
-                              setPrdInlineEditId(b.id);
+                              openPrdBlockEditor(b.id);
                             }}
                             disabled={editingDisabled}
                             style={{
                               ...prdPencilBtnStyle,
-                              opacity: prdHoverId === b.id ? (editingDisabled ? 0.4 : 1) : 0,
-                              pointerEvents: prdHoverId === b.id && !editingDisabled ? 'auto' : 'none',
+                              opacity: isMobile ? (editingDisabled ? 0.45 : 1) : prdHoverId === b.id ? (editingDisabled ? 0.4 : 1) : 0,
+                              pointerEvents:
+                                isMobile || (prdHoverId === b.id && !editingDisabled) ? 'auto' : 'none',
                               cursor: editingDisabled ? 'not-allowed' : 'pointer',
                               border: `1px solid ${themeVars.border}`,
                               background: themeVars.panelBg3,
@@ -5510,10 +5571,11 @@ useEffect(() => {
                     <PrdToolbar
                       visible={toolbarVisible}
                       alwaysVisible
+                      isMobile={isMobile}
                       className="prd-toolbar"
                       onCmd={prdCmd}
                       onLink={prdLink}
-                      toolBtnStyle={prdToolBtn}
+                      toolBtnStyle={isMobile ? prdToolBtnMobile : prdToolBtn}
                       themeVars={themeVars}
                     />
 
@@ -6630,6 +6692,98 @@ useEffect(() => {
                   : `Press and hold for ${deleteHoldSecondsLabel}s to confirm deletion.`}
               </div>
             ) : null}
+          </div>
+        </div>
+      ) : null}
+      {isMobile && prdMobileEditId && prdMobileEditingBlock ? (
+        <div
+          onMouseDown={closePrdMobileEditor}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: themeVars.overlay,
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            zIndex: 10130,
+            padding: `${mobileTopPad} 10px calc(env(safe-area-inset-bottom, 0px) + 10px)`,
+          }}
+        >
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '100%',
+              minHeight: 0,
+              maxHeight: '100%',
+              borderRadius: 14,
+              border: `1px solid ${themeVars.border}`,
+              background: themeVars.panelBgStrong,
+              boxShadow: themeVars.shadow3,
+              display: 'grid',
+              gridTemplateRows: 'auto auto minmax(0, 1fr)',
+              gap: 8,
+              padding: 10,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 900, lineHeight: 1.15 }}>
+                  {prdMobileEditingBlock.type === 'title' ? 'Project title' : prdMobileEditingBlock.label}
+                </div>
+                <div style={{ marginTop: 2, fontSize: 11, color: themeVars.muted }}>
+                  Mobile edit mode
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closePrdMobileEditor}
+                style={{
+                  ...prdActionBtnMobile,
+                  padding: '6px 11px',
+                }}
+                title="Done"
+              >
+                Done
+              </button>
+            </div>
+
+            <PrdToolbar
+              visible
+              alwaysVisible
+              isMobile
+              className="prd-toolbar"
+              onCmd={prdCmd}
+              onLink={prdLink}
+              toolBtnStyle={prdToolBtnMobile}
+              themeVars={themeVars}
+            />
+
+            <div style={{ minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <InlineRichField
+                blockId={prdMobileEditingBlock.id}
+                html={prdToHtml(prdMobileEditingBlock.value)}
+                onChangeHtml={(nextHtml) => updatePrdBlock(prdMobileEditingBlock.id, nextHtml)}
+                readOnly={editingDisabled}
+                themeVars={themeVars}
+                editorStyle={{
+                  minHeight: '100%',
+                  height: '100%',
+                  maxHeight: 'none',
+                  fontSize: 16,
+                  lineHeight: 1.55,
+                }}
+                onFocusBlock={(blockId, el) => {
+                  prdActiveRef.current = el;
+                  setPrdFocusId(blockId);
+                }}
+                onBlurBlock={(blockId, nextHtml) => {
+                  commitPrdBlock(blockId, nextHtml);
+                  setPrdFocusId((cur) => (cur === blockId ? null : cur));
+                }}
+                placeholder="Write something…"
+              />
+            </div>
           </div>
         </div>
       ) : null}
