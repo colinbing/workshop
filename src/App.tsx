@@ -3893,7 +3893,7 @@ useEffect(() => {
   };
 
   const sidebarStyle: React.CSSProperties = {
-    padding: 14,
+    padding: isMobile ? 14 : '20px 14px 14px',
     borderRight: `1px solid ${themeVars.divider}`,
     background: themeVars.panelBg,
     backdropFilter: 'blur(10px)',
@@ -4362,6 +4362,7 @@ useEffect(() => {
   const canMoveCtxFeatureUp = ctxMenuFeatureIndex > 0;
   const canMoveCtxFeatureDown =
     ctxMenuFeatureIndex >= 0 && ctxMenuFeatureIndex < ctxMenuFeaturePhaseIds.length - 1;
+  const mobileActiveProjectLabel = (activeProjectName || 'Untitled project').trim();
   const closeMobileSidebar = () => {
     if (isMobile) setMobileSidebarOpen(false);
   };
@@ -4457,12 +4458,28 @@ useEffect(() => {
               cursor: 'pointer',
               display: 'inline-flex',
               alignItems: 'center',
+              gap: 8,
               height: 38,
+              minWidth: 0,
             }}
             aria-label="Open menu"
             title="Open menu"
           >
             <img src={logoSrc} alt="Workshop" style={{ ...logoStyle, height: 20 }} />
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: 800,
+                color: themeVars.appText,
+                opacity: 0.86,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: 'min(42vw, 180px)',
+              }}
+            >
+              {mobileActiveProjectLabel}
+            </span>
           </button>
         </div>
       ) : null}
@@ -4505,12 +4522,22 @@ useEffect(() => {
         <div style={{ display: 'grid', gap: 8 }}>
           {projects.map((project) => {
             const isActive = project.id === activeProjectId;
+            const emphasizeActiveProject = isActive && projects.length > 1;
             const projectName = getPrdTitle(project.prd) || project.doc.title || 'Untitled project';
             const stats = `${project.doc.phases.length} phases • ${project.doc.features.length} features`;
             const color = PROJECT_COLORS.find((c) => c.id === project.colorId);
             const baseBg = isActive ? themeVars.panelBg2 : themeVars.panelBg;
             const borderColor = color ? color.border : isActive ? themeVars.border : themeVars.borderSoft;
             const background = color ? `linear-gradient(180deg, ${color.bg}, ${baseBg})` : baseBg;
+            const activeAccentBorder = isLight ? 'rgba(30,120,255,0.42)' : 'rgba(120,200,255,0.46)';
+            const activeAccentGlow = isLight ? 'rgba(30,120,255,0.24)' : 'rgba(120,200,255,0.30)';
+            const cardBorderColor = emphasizeActiveProject ? activeAccentBorder : borderColor;
+            const cardShadow = emphasizeActiveProject
+              ? `0 0 0 1px ${activeAccentGlow}, ${themeVars.shadow1}`
+              : themeVars.shadow1;
+            const cardBackground = emphasizeActiveProject
+              ? `linear-gradient(180deg, ${isLight ? 'rgba(30,120,255,0.10)' : 'rgba(120,200,255,0.12)'}, transparent 48%), ${background}`
+              : background;
 
             return (
               <div
@@ -4562,19 +4589,34 @@ useEffect(() => {
                 }}
                 style={{
                   borderRadius: 12,
-                  border: `1px solid ${borderColor}`,
-                  background,
+                  border: `1px solid ${cardBorderColor}`,
+                  background: cardBackground,
                   padding: isActive ? 10 : 8,
                   position: 'relative',
                   cursor: 'pointer',
                   opacity: isActive ? 1 : 0.82,
                   transition: 'opacity 140ms ease, transform 140ms ease',
                   transform: isActive ? 'scale(1)' : 'scale(0.985)',
+                  boxShadow: cardShadow,
                   display: 'grid',
                   gap: 6,
                 }}
                 title={projectName}
               >
+                {emphasizeActiveProject ? (
+                  <span
+                    aria-hidden
+                    style={{
+                      position: 'absolute',
+                      left: -1,
+                      top: 8,
+                      bottom: 8,
+                      width: 3,
+                      borderRadius: 999,
+                      background: isLight ? 'rgba(30,120,255,0.86)' : 'rgba(120,200,255,0.92)',
+                    }}
+                  />
+                ) : null}
                 <div
                   style={{
                     display: 'flex',
