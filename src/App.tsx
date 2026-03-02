@@ -4363,6 +4363,7 @@ useEffect(() => {
   const canMoveCtxFeatureDown =
     ctxMenuFeatureIndex >= 0 && ctxMenuFeatureIndex < ctxMenuFeaturePhaseIds.length - 1;
   const mobileActiveProjectLabel = (activeProjectName || 'Untitled project').trim();
+  const deleteHoldSecondsLabel = (DELETE_HOLD_MS / 1000).toFixed(1);
   const closeMobileSidebar = () => {
     if (isMobile) setMobileSidebarOpen(false);
   };
@@ -4466,20 +4467,27 @@ useEffect(() => {
             title="Open menu"
           >
             <img src={logoSrc} alt="Workshop" style={{ ...logoStyle, height: 20 }} />
-            <span
-              style={{
-                fontSize: 13,
-                fontWeight: 800,
-                color: themeVars.appText,
-                opacity: 0.86,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                maxWidth: 'min(42vw, 180px)',
-              }}
-            >
-              {mobileActiveProjectLabel}
-            </span>
+            {!mobileSidebarOpen ? (
+              <span
+                style={{
+                  marginLeft: 3,
+                  fontFamily:
+                    '"SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  fontSize: 14,
+                  fontWeight: 700,
+                  letterSpacing: 0.1,
+                  lineHeight: 1.1,
+                  color: themeVars.appText,
+                  opacity: 0.9,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: 'clamp(190px, 62vw, 330px)',
+                }}
+              >
+                {mobileActiveProjectLabel}
+              </span>
+            ) : null}
           </button>
         </div>
       ) : null}
@@ -4603,20 +4611,6 @@ useEffect(() => {
                 }}
                 title={projectName}
               >
-                {emphasizeActiveProject ? (
-                  <span
-                    aria-hidden
-                    style={{
-                      position: 'absolute',
-                      left: -1,
-                      top: 8,
-                      bottom: 8,
-                      width: 3,
-                      borderRadius: 999,
-                      background: isLight ? 'rgba(30,120,255,0.86)' : 'rgba(120,200,255,0.92)',
-                    }}
-                  />
-                ) : null}
                 <div
                   style={{
                     display: 'flex',
@@ -6584,6 +6578,7 @@ useEffect(() => {
             <div style={{ fontSize: 12, fontWeight: 800, color: themeVars.muted }}>Danger zone</div>
             <button
               type="button"
+              onContextMenu={(e) => e.preventDefault()}
               onPointerDown={() => startDeleteHold(projectPickerProject.id)}
               onPointerUp={cancelDeleteHold}
               onPointerLeave={cancelDeleteHold}
@@ -6601,11 +6596,13 @@ useEffect(() => {
                 fontWeight: 800,
                 fontSize: 12,
                 opacity: editingDisabled || projects.length <= 1 ? 0.5 : 1,
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
               }}
               title={
                 projects.length <= 1
                   ? 'Keep at least one project'
-                  : 'Hold to delete this project'
+                  : `Hold for ${deleteHoldSecondsLabel}s to delete this project`
               }
             >
               <div
@@ -6619,9 +6616,20 @@ useEffect(() => {
                 }}
               />
               <span style={{ position: 'relative' }}>
-                {projects.length <= 1 ? 'Cannot delete last project' : 'Hold to delete project'}
+                {projects.length <= 1
+                  ? 'Cannot delete last project'
+                  : deleteHoldProgress > 0
+                    ? 'Keep holding…'
+                    : `Hold ${deleteHoldSecondsLabel}s to delete project`}
               </span>
             </button>
+            {projects.length > 1 ? (
+              <div style={{ fontSize: 11, color: themeVars.muted, opacity: 0.9 }}>
+                {deleteHoldProgress > 0
+                  ? 'Release to cancel.'
+                  : `Press and hold for ${deleteHoldSecondsLabel}s to confirm deletion.`}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
